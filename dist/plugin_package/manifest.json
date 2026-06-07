@@ -1,0 +1,28 @@
+{
+  "id": "jwt-attacker",
+  "name": "JWT Attacker",
+  "version": "1.0.0",
+  "description": "Automated JWT security testing — native implementation of the full JWT attack playbook",
+  "author": {
+    "name": "Security Researcher"
+  },
+  "links": {},
+  "plugins": [
+    {
+      "id": "frontend",
+      "kind": "frontend",
+      "name": "JWT Attacker Frontend",
+      "entrypoint": "frontend/index.js",
+      "backend": {
+        "id": "backend"
+      }
+    },
+    {
+      "id": "backend",
+      "kind": "backend",
+      "name": "JWT Attacker Backend",
+      "entrypoint": "backend/index.js",
+      "runtime": "javascript"
+    }
+  ]
+}

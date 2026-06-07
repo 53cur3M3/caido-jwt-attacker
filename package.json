@@ -1,0 +1,17 @@
+{
+  "name": "jwt-attacker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "caido-dev build",
+    "watch": "caido-dev watch",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@caido-community/dev": "latest",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "autoprefixer": "^10.4.20",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.5.4"
+  }
+}
