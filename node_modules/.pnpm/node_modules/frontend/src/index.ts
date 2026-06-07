@@ -64,8 +64,8 @@ export function init(sdk: CaidoSDK) {
     attackStore.setJWKSPayload(sessionId, jwksJson, privateKeyPem);
   });
 
-  sdk.backend.onEvent("jwks-found", ({ sessionId, url, source, keyCount }) => {
-    attackStore.addDiscoveredEndpoint(sessionId, { url, source, keyCount });
+  sdk.backend.onEvent("jwks-found", ({ sessionId, url, source, keyCount, content, pems }) => {
+    attackStore.addDiscoveredEndpoint(sessionId, { url, source, keyCount, content, pems });
   });
 
   // ─── Register context menu commands ─────────────────────────────────────

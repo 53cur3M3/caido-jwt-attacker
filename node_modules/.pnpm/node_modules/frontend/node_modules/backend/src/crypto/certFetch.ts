@@ -55,6 +55,7 @@ export interface DiscoveredKey {
   url: string;
   publicKeyPem: string;
   kind: "certificate" | "public-key";
+  content: string; // raw body returned by the endpoint
 }
 
 // Wrap a PKCS#1 RSAPublicKey DER in a SubjectPublicKeyInfo so it parses like a
@@ -114,7 +115,7 @@ export async function discoverPublicKeys(
         const body = await fetcher(url);
         const extracted = extractPublicKeyPem(body);
         if (!extracted) return null;
-        return { url, publicKeyPem: extracted.pem, kind: extracted.kind };
+        return { url, publicKeyPem: extracted.pem, kind: extracted.kind, content: body };
       })
     );
     for (const r of settled) {
@@ -128,6 +129,19 @@ export async function discoverPublicKeys(
 export interface JWKSDiscoveryResult {
   url: string;
   keys: JWK[];
+  content: string; // raw body returned by the endpoint
+}
+
+// Fetch a URL and return it as a JWKS result if it parses to a non-empty key set.
+async function tryJwks(fetcher: UrlFetcher, url: string): Promise<JWKSDiscoveryResult | null> {
+  try {
+    const body = await fetcher(url);
+    const parsed = JSON.parse(body) as { keys: JWK[] };
+    if (Array.isArray(parsed.keys) && parsed.keys.length > 0) {
+      return { url, keys: parsed.keys, content: body };
+    }
+  } catch { /* not a JWKS */ }
+  return null;
 }
 
 export async function discoverJWKS(
@@ -150,11 +164,11 @@ export async function discoverJWKS(
   // First try OpenID discovery
   try {
     const jwksUri = await fetchOpenIDConfig(fetcher, origin);
-    if (jwksUri) {
-      const jwks = await fetchJWKS(fetcher, jwksUri);
-      if (jwks && jwks.keys.length > 0 && !seenUrls.has(jwksUri)) {
+    if (jwksUri && !seenUrls.has(jwksUri)) {
+      const jwks = await tryJwks(fetcher, jwksUri);
+      if (jwks) {
         seenUrls.add(jwksUri);
-        results.push({ url: jwksUri, keys: jwks.keys });
+        results.push(jwks);
       }
     }
   } catch { /* ignore */ }
@@ -163,12 +177,7 @@ export async function discoverJWKS(
   for (let i = 0; i < pathsToTry.length; i += 5) {
     const batch = pathsToTry.slice(i, i + 5);
     const settled = await Promise.allSettled(
-      batch.map(async (path) => {
-        const url = `${origin}${path}`;
-        const jwks = await fetchJWKS(fetcher, url);
-        if (jwks && jwks.keys.length > 0) return { url, keys: jwks.keys };
-        return null;
-      })
+      batch.map((path) => tryJwks(fetcher, `${origin}${path}`))
     );
     for (const r of settled) {
       if (r.status === "fulfilled" && r.value && !seenUrls.has(r.value.url)) {

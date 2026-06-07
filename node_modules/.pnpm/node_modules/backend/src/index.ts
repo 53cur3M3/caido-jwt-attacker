@@ -41,7 +41,7 @@ export type BackendEvents = DefineEvents<{
   "jwt-key-recovery-progress": (data: { sessionId: string; message: string }) => void;
   "jwt-key-recovery-complete": (data: { sessionId: string; keys: string[] }) => void;
   "jwks-payload": (data: { sessionId: string; jwksJson: string; privateKeyPem: string }) => void;
-  "jwks-found": (data: { sessionId: string; url: string; source: string; keyCount: number }) => void;
+  "jwks-found": (data: { sessionId: string; url: string; source: string; keyCount: number; content: string; pems: string[] }) => void;
 }>;
 
 // ─── RPC API exposed to frontend ────────────────────────────────────────────

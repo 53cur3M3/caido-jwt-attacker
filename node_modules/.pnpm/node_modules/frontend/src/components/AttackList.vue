@@ -30,11 +30,17 @@
 
     <!-- Discovered JWKS / key endpoints — highlighted so the analyst can't miss it -->
     <div v-if="session?.discoveredEndpoints.length" class="px-3 py-2 bg-cyan-950 border-b-2 border-cyan-600 text-xs text-cyan-200">
-      <p class="font-semibold mb-1">🔎 {{ session.discoveredEndpoints.length }} key endpoint(s) discovered on the target:</p>
-      <p v-for="(ep, i) in session.discoveredEndpoints" :key="i" class="font-mono break-all leading-snug">
+      <p class="font-semibold mb-1">🔎 {{ session.discoveredEndpoints.length }} key endpoint(s) discovered — click for details:</p>
+      <div
+        v-for="(ep, i) in session.discoveredEndpoints"
+        :key="i"
+        @click="emit('selectEndpoint', ep)"
+        :class="['font-mono break-all leading-snug px-1 -mx-1 rounded cursor-pointer hover:bg-cyan-900 transition-colors',
+          selectedEndpointUrl === ep.url ? 'bg-cyan-900 ring-1 ring-cyan-500' : '']"
+      >
         <span class="text-cyan-400">[{{ ep.source }}]</span> {{ ep.url }}
         <span v-if="ep.keyCount" class="text-cyan-500">— {{ ep.keyCount }} key(s)</span>
-      </p>
+      </div>
     </div>
 
     <!-- Progress bar -->
@@ -114,12 +120,13 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useAttackStore } from "../stores/attacks.js";
-import type { AttackResult, AttackSession } from "../types.js";
+import type { AttackResult, AttackSession, DiscoveredEndpoint } from "../types.js";
 import { techniqueColor, statusColor } from "../types.js";
 
-defineProps<{ selectedId?: string }>();
+defineProps<{ selectedId?: string; selectedEndpointUrl?: string }>();
 const emit = defineEmits<{
   (e: "select", result: AttackResult): void;
+  (e: "selectEndpoint", endpoint: DiscoveredEndpoint): void;
   (e: "showJwks", session: AttackSession): void;
 }>();
 

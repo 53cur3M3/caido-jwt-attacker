@@ -18,6 +18,8 @@ export interface DiscoveredEndpoint {
   url: string;
   source: string;
   keyCount: number;
+  content: string;   // raw body returned by the URL
+  pems: string[];    // PEM-encoded public keys extracted from it
 }
 
 export interface AttackSession {

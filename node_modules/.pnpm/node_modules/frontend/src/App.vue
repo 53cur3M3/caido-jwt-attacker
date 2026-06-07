@@ -21,12 +21,15 @@
       <div class="w-[42%] shrink-0 border-r border-gray-700 overflow-hidden flex flex-col">
         <AttackList
           :selected-id="selectedResult?.id"
-          @select="selectedResult = $event"
+          :selected-endpoint-url="selectedEndpoint?.url"
+          @select="onSelectAttack"
+          @select-endpoint="onSelectEndpoint"
           @show-jwks="showJwks = $event"
         />
       </div>
       <div class="flex-1 overflow-hidden">
-        <AttackDetail :result="selectedResult ?? null" />
+        <EndpointDetail v-if="selectedEndpoint" :endpoint="selectedEndpoint" />
+        <AttackDetail v-else :result="selectedResult ?? null" />
       </div>
     </div>
 
@@ -69,12 +72,24 @@
 import { ref } from "vue";
 import AttackList from "./components/AttackList.vue";
 import AttackDetail from "./components/AttackDetail.vue";
+import EndpointDetail from "./components/EndpointDetail.vue";
 import ConfigPanel from "./components/ConfigPanel.vue";
-import type { AttackResult, AttackSession } from "./types.js";
+import type { AttackResult, AttackSession, DiscoveredEndpoint } from "./types.js";
 
 const activeTab = ref("results");
 const selectedResult = ref<AttackResult | null>(null);
+const selectedEndpoint = ref<DiscoveredEndpoint | null>(null);
 const showJwks = ref<AttackSession | null>(null);
+
+function onSelectAttack(result: AttackResult) {
+  selectedResult.value = result;
+  selectedEndpoint.value = null;
+}
+
+function onSelectEndpoint(endpoint: DiscoveredEndpoint) {
+  selectedEndpoint.value = endpoint;
+  selectedResult.value = null;
+}
 
 const tabs = [
   { id: "results", label: "Results" },
