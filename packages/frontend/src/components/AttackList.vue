@@ -67,9 +67,14 @@
       ✓ Recovered {{ session.recoveredKeys.length }} public key(s) from HTTP history
     </div>
 
-    <!-- JWKS info -->
-    <div v-if="session?.jwksJson" class="px-3 py-1.5 bg-purple-950 border-b border-purple-800 text-xs text-purple-300 cursor-pointer hover:bg-purple-900" @click="emit('showJwks', session)">
-      ℹ JKU/X5U spoofing — click to view JWKS payload to host
+    <!-- JKU/X5U spoofing: endpoint check + JWKS to host (click → right pane) -->
+    <div
+      v-if="session?.spoof"
+      @click="emit('selectSpoof', session.spoof)"
+      :class="['px-3 py-1.5 border-b text-xs cursor-pointer transition-colors', spoofBanner.cls,
+        selectedSpoof ? 'ring-1 ring-inset ring-current' : '']"
+    >
+      {{ spoofBanner.icon }} JKU/X5U spoofing — {{ spoofBanner.text }} · click to view JWKS to host
     </div>
 
     <!-- Filter tabs -->
@@ -109,6 +114,7 @@
             {{ result.responseStatus }}
           </span>
           <span v-else-if="result.error" class="text-xs text-red-500 shrink-0">ERR</span>
+          <span v-else-if="result.infoOnly" class="text-xs text-cyan-400 shrink-0">ℹ</span>
           <span v-else class="text-xs text-gray-600 shrink-0 animate-pulse">…</span>
         </div>
         <p class="text-xs text-gray-500 mt-0.5 truncate pl-0.5">{{ result.description.slice(0, 80) }}</p>
@@ -120,20 +126,34 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useAttackStore } from "../stores/attacks.js";
-import type { AttackResult, AttackSession, DiscoveredEndpoint } from "../types.js";
+import type { AttackResult, DiscoveredEndpoint, SpoofInfo } from "../types.js";
 import { techniqueColor, statusColor } from "../types.js";
 
-defineProps<{ selectedId?: string; selectedEndpointUrl?: string }>();
+const props = defineProps<{ selectedId?: string; selectedEndpointUrl?: string; selectedSpoof?: boolean }>();
 const emit = defineEmits<{
   (e: "select", result: AttackResult): void;
   (e: "selectEndpoint", endpoint: DiscoveredEndpoint): void;
-  (e: "showJwks", session: AttackSession): void;
+  (e: "selectSpoof", spoof: SpoofInfo): void;
 }>();
 
 const store = useAttackStore();
 const activeFilter = ref("all");
 
 const session = computed(() => store.activeSession);
+
+const spoofBanner = computed(() => {
+  const sp = session.value?.spoof;
+  switch (sp?.verifyStatus) {
+    case "verified":
+      return { icon: "✓", text: `endpoint verified${sp.selfVerified ? "" : " (⚠ signing check failed)"}`, cls: "bg-green-950 border-green-800 text-green-300 hover:bg-green-900" };
+    case "mismatch":
+      return { icon: "✗", text: "hosted JWKS does not match — re-host it", cls: "bg-red-950 border-red-800 text-red-300 hover:bg-red-900" };
+    case "unreachable":
+      return { icon: "⚠", text: "JWKS URL unreachable", cls: "bg-orange-950 border-orange-800 text-orange-300 hover:bg-orange-900" };
+    default:
+      return { icon: "ℹ", text: "no JWKS URL configured", cls: "bg-purple-950 border-purple-800 text-purple-300 hover:bg-purple-900" };
+  }
+});
 
 const tabs = computed(() => {
   const results = session.value?.results ?? [];

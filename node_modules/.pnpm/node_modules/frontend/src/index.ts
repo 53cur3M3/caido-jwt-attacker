@@ -32,7 +32,9 @@ export function init(sdk: CaidoSDK) {
   // ─── Load config from storage ───────────────────────────────────────────
   const configStore = useConfigStore();
   configStore.setSDK(sdk as unknown as Parameters<typeof configStore.setSDK>[0]);
-  configStore.load();
+  // Load config, then ensure a persisted spoofing key pair exists (generated
+  // once on first run via the backend).
+  configStore.load().then(() => configStore.ensureSpoofKeyPair());
 
   // ─── Wire up backend events ─────────────────────────────────────────────
   const attackStore = useAttackStore();
@@ -60,8 +62,8 @@ export function init(sdk: CaidoSDK) {
     for (const key of keys) attackStore.addRecoveredKey(sessionId, key);
   });
 
-  sdk.backend.onEvent("jwks-payload", ({ sessionId, jwksJson, privateKeyPem }) => {
-    attackStore.setJWKSPayload(sessionId, jwksJson, privateKeyPem);
+  sdk.backend.onEvent("jwks-spoof", ({ sessionId, ...spoof }) => {
+    attackStore.setSpoof(sessionId, spoof);
   });
 
   sdk.backend.onEvent("jwks-found", ({ sessionId, url, source, keyCount, content, pems }) => {
@@ -92,6 +94,10 @@ export function init(sdk: CaidoSDK) {
         console.warn("[JWT Attacker] No request IDs found in context");
         return;
       }
+
+      // Make sure the persisted spoofing key pair (matching the hosted jwks.json)
+      // exists before attacking, so JKU/X5U spoofing always signs with it.
+      await configStore.ensureSpoofKeyPair();
 
       // Deep-clone to a plain object — the raw Pinia/Vue reactive proxy does not
       // always survive Caido's structured-clone RPC boundary intact (nested

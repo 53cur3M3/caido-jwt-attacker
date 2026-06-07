@@ -71,12 +71,9 @@ export const useAttackStore = defineStore("attacks", () => {
     }
   }
 
-  function setJWKSPayload(sessionId: string, jwksJson: string, jwksPrivateKey: string) {
+  function setSpoof(sessionId: string, spoof: AttackSession["spoof"]) {
     const s = sessions.value.find((x) => x.sessionId === sessionId);
-    if (s) {
-      s.jwksJson = jwksJson;
-      s.jwksPrivateKey = jwksPrivateKey;
-    }
+    if (s) s.spoof = spoof;
   }
 
   function setActiveSession(sessionId: string) {
@@ -99,7 +96,7 @@ export const useAttackStore = defineStore("attacks", () => {
     addRecoveredKey,
     logKeyRecovery,
     addDiscoveredEndpoint,
-    setJWKSPayload,
+    setSpoof,
     setActiveSession,
     clearSessions,
   };

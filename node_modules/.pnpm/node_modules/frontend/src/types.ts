@@ -21,6 +21,9 @@ export interface AttackResult {
   // For HMAC-based attacks (kid injection, weak secret): the plaintext HMAC
   // secret used to sign — needed for jwt_tool reproduction commands.
   hmacSecret?: string;
+  // For JKU/X5U spoofing: the RSA private key (PEM) used to sign — needed for
+  // jwt_tool reproduction commands that re-sign with the same key.
+  signingKeyPem?: string;
   // Informational results (e.g. weak-secret "not found") that should be shown
   // but NOT sent as an HTTP request.
   infoOnly?: boolean;
@@ -36,6 +39,16 @@ export interface DiscoveredEndpoint {
   pems: string[];    // PEM-encoded public keys extracted from it
 }
 
+export interface SpoofInfo {
+  jwksJson: string;        // the JWKS document to host
+  privateKeyPem: string;   // the signing private key
+  url: string;             // configured JWKS endpoint URL
+  verifyStatus: "verified" | "mismatch" | "unreachable" | "no-url";
+  verifyMessage: string;
+  fetchedContent: string;  // what was actually fetched from the URL
+  selfVerified: boolean;   // signed token validates against the configured JWKS
+}
+
 export interface AttackSession {
   sessionId: string;
   requestId: string;
@@ -46,8 +59,7 @@ export interface AttackSession {
   errors: string[];
   recoveredKeys: string[];
   discoveredEndpoints: DiscoveredEndpoint[];
-  jwksJson?: string;
-  jwksPrivateKey?: string;
+  spoof?: SpoofInfo;
   keyRecoveryLog: string[];
 }
 
@@ -60,6 +72,11 @@ export interface PluginConfig {
   // COMMON_JWKS_PATHS).
   jwksPaths: string[];
   customWordlist: string[];
+  // Persisted JKU/X5U spoofing key pair (generated once on install, regenerable):
+  // the RSA private key used to sign spoofed tokens, and the JWKS document that
+  // must be hosted at jwksUrl. The two are always kept consistent.
+  spoofPrivateKeyPem: string;
+  spoofJwksJson: string;
   enabledAttacks: Record<string, boolean>;
   // Opt-in: RSA public-key recovery from 2+ history JWTs. Off by default because
   // the integer arithmetic (sig^65537) is extremely slow in a pure-JS runtime.
@@ -106,6 +123,8 @@ export const DEFAULT_CONFIG: PluginConfig = {
   customCertPem: "",
   jwksPaths: [...COMMON_JWKS_PATHS],
   customWordlist: [],
+  spoofPrivateKeyPem: "",
+  spoofJwksJson: "",
   enableKeyRecovery: false,
   enabledAttacks: {
     none: true,

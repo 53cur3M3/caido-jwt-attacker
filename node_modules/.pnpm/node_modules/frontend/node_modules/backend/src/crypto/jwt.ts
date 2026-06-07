@@ -172,6 +172,29 @@ function modpow(base: bigint, exp: bigint, mod: bigint): bigint {
   return result;
 }
 
+// Verify an RS256 token against an RSA public key given as JWK n/e (base64url).
+// Pure BigInt (LLRT has no createVerify): checks s^e mod n == EMSA-PKCS1(sha256).
+// Used to self-confirm that a spoofed token validates against the hosted JWKS.
+export function verifyRS256WithJWK(token: string, nB64u: string, eB64u: string): boolean {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const nBuf = b64urlDecode(nB64u);
+    const n = nBuf.length ? BigInt("0x" + nBuf.toString("hex")) : 0n;
+    if (n === 0n) return false;
+    const eBuf = b64urlDecode(eB64u);
+    const e = eBuf.length ? BigInt("0x" + eBuf.toString("hex")) : 0n;
+    const sBuf = b64urlDecode(parts[2]);
+    const s = sBuf.length ? BigInt("0x" + sBuf.toString("hex")) : 0n;
+    const m = modpow(s, e, n);
+    const hash = createHash("sha256").update(`${parts[0]}.${parts[1]}`).digest();
+    const em = emsaPKCS1(hash, "sha256", nBuf.length);
+    return m === BigInt("0x" + em.toString("hex"));
+  } catch {
+    return false;
+  }
+}
+
 function emsaPKCS1(hash: Buffer, hashAlg: string, keyLen: number): Buffer {
   const di = Buffer.from(DIGEST_INFO[hashAlg], "hex");
   const psLen = keyLen - 3 - di.length - hash.length;

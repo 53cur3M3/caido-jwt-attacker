@@ -10,8 +10,39 @@
         class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-gray-200 text-xs font-mono focus:outline-none focus:border-blue-500"
       />
       <p class="text-xs text-gray-500 mt-1">
-        Host the generated JWKS JSON at this URL so the target server can fetch it.
+        Host the JWKS JSON below at this URL so the target server can fetch the attacker's key.
       </p>
+
+      <!-- JWKS document to host (matches the persisted spoofing key pair) -->
+      <div class="mt-3">
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-gray-300">JWKS to host (<code>jwks.json</code>)</label>
+          <div class="flex items-center gap-3">
+            <button
+              @click="copyJwks"
+              class="text-xs text-gray-400 hover:text-blue-400 transition-colors"
+            >{{ copiedJwks ? "✓ Copied" : "Copy" }}</button>
+            <button
+              @click="regenerate"
+              :disabled="store.regenerating"
+              class="text-xs text-gray-400 hover:text-blue-400 transition-colors disabled:opacity-50"
+              title="Generate a new key pair and JWKS (invalidates the previously hosted one)"
+            >{{ store.regenerating ? "Regenerating…" : "↻ Regenerate key pair" }}</button>
+          </div>
+        </div>
+        <textarea
+          :value="cfg.spoofJwksJson"
+          readonly
+          rows="10"
+          placeholder="(generated automatically on first run)"
+          class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-green-300 text-xs font-mono focus:outline-none resize-y"
+        />
+        <p class="text-xs text-gray-500 mt-1">
+          Auto-generated and stored on install. The JKU/X5U spoofing attack signs tokens with the
+          matching private key, so host this exact document. Use Regenerate to rotate the key pair —
+          you must then re-host the new JWKS.
+        </p>
+      </div>
     </section>
 
     <section>
@@ -135,15 +166,39 @@
 import { ref, reactive, watch } from "vue";
 import { useConfigStore } from "../stores/config.js";
 import { ATTACK_LABELS, DEFAULT_CONFIG } from "../types.js";
+import type { PluginConfig } from "../types.js";
 
 const store = useConfigStore();
-const cfg = reactive({ ...store.config });
+// Deep-clone so the local form never shares nested objects (e.g. enabledAttacks)
+// with the store. A shallow copy would let checkbox edits mutate the store and
+// trigger the sync watch, which would clobber other unsaved fields (e.g. the
+// JWKS Endpoint URL).
+const clone = (c: PluginConfig): PluginConfig => JSON.parse(JSON.stringify(c));
+const cfg = reactive(clone(store.config));
 const saved = ref(false);
+const copiedJwks = ref(false);
 
-watch(() => store.config, (v) => Object.assign(cfg, v), { deep: true });
+// Sync store → form only on genuine external store changes (load / regenerate /
+// save), deep-cloning so refs stay independent.
+watch(() => store.config, (v) => Object.assign(cfg, clone(v)), { deep: true });
 
 function resetJwksPaths() {
   cfg.jwksPaths = [...DEFAULT_CONFIG.jwksPaths];
+}
+
+async function regenerate() {
+  // Commit current form edits (incl. the JWKS Endpoint URL) to the store FIRST,
+  // so regenerating the key pair doesn't wipe an unsaved URL via the sync watch.
+  store.update({ ...cfg });
+  await store.regenerateSpoofKeyPair();
+  // store.config now holds the new key pair/JWKS; the watch above syncs `cfg`.
+}
+
+async function copyJwks() {
+  if (!cfg.spoofJwksJson) return;
+  await navigator.clipboard.writeText(cfg.spoofJwksJson);
+  copiedJwks.value = true;
+  setTimeout(() => { copiedJwks.value = false; }, 1500);
 }
 
 async function save() {
