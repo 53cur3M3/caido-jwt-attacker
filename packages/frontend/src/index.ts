@@ -12,6 +12,8 @@ import { useAttackStore } from "./stores/attacks.js";
 export type CaidoSDK = SDK<API, BackendEvents>;
 
 export function init(sdk: CaidoSDK) {
+  console.log("[JWT Attacker] init() called");
+
   // ─── Mount Vue app ──────────────────────────────────────────────────────
   const app = createApp(App);
   const pinia = createPinia();
@@ -36,8 +38,8 @@ export function init(sdk: CaidoSDK) {
   const attackStore = useAttackStore();
 
   sdk.backend.onEvent("jwt-attack-started", ({ sessionId, requestId, total }) => {
-    attackStore.startSession(sessionId, requestId);
-    attackStore.setSessionTotal(sessionId, total);
+    console.log("[JWT Attacker] event: jwt-attack-started", { sessionId, requestId, total });
+    attackStore.startSession(sessionId, requestId, total);
     sdk.navigation.goTo("/jwt-attacker");
   });
 
@@ -46,6 +48,7 @@ export function init(sdk: CaidoSDK) {
   });
 
   sdk.backend.onEvent("jwt-attack-complete", ({ sessionId, errors }) => {
+    console.log("[JWT Attacker] event: jwt-attack-complete", { sessionId, errors });
     attackStore.completeSession(sessionId, errors);
   });
 
@@ -65,20 +68,41 @@ export function init(sdk: CaidoSDK) {
   sdk.commands.register("jwt-attacker.attack", {
     name: "Attack JWT",
     group: "JWT Attacker",
-    run: async (_sdk, context) => {
+    run: async (context) => {
+      console.log("[JWT Attacker] run() called, context.type =", context.type);
+
       const requestIds: string[] = [];
 
       if (context.type === "RequestRowContext") {
         for (const req of context.requests) {
-          requestIds.push(req.getId());
+          requestIds.push(req.id);
         }
       } else if (context.type === "RequestContext") {
-        requestIds.push(context.request.getId());
+        const req = context.request;
+        if ("id" in req && req.id) requestIds.push(req.id as string);
       }
 
+      console.log("[JWT Attacker] requestIds:", requestIds);
+
+      if (requestIds.length === 0) {
+        console.warn("[JWT Attacker] No request IDs found in context");
+        return;
+      }
+
+      // Deep-clone to a plain object — the raw Pinia/Vue reactive proxy does not
+      // always survive Caido's structured-clone RPC boundary intact (nested
+      // `enabledAttacks` can arrive empty), which would build zero attacks.
+      const plainConfig = JSON.parse(JSON.stringify(configStore.config));
+      console.log("[JWT Attacker] config being sent:", plainConfig);
+
       for (const id of requestIds) {
-        const config = configStore.config;
-        await sdk.backend.call("attackJwt", id, config);
+        console.log("[JWT Attacker] calling backend attackJwt for id:", id);
+        try {
+          const result = await sdk.backend.attackJwt(id, plainConfig);
+          console.log("[JWT Attacker] backend call returned:", result);
+        } catch (e) {
+          console.error("[JWT Attacker] backend call failed:", e);
+        }
       }
     },
   });
@@ -95,4 +119,6 @@ export function init(sdk: CaidoSDK) {
     commandId: "jwt-attacker.attack",
     leadingIcon: "fas fa-key",
   });
+
+  console.log("[JWT Attacker] init() complete — commands and menu items registered");
 }

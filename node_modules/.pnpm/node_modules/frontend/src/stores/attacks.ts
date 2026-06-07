@@ -10,13 +10,19 @@ export const useAttackStore = defineStore("attacks", () => {
     sessions.value.find((s) => s.sessionId === activeSessionId.value) ?? sessions.value[0] ?? null
   );
 
-  function startSession(sessionId: string, requestId: string) {
+  function startSession(sessionId: string, requestId: string, total = 0) {
+    const existing = sessions.value.find((x) => x.sessionId === sessionId);
+    if (existing) {
+      // Second call = total update
+      if (total > 0) existing.total = total;
+      return;
+    }
     const session: AttackSession = {
       sessionId,
       requestId,
       startedAt: Date.now(),
       results: [],
-      total: 0,
+      total,
       complete: false,
       errors: [],
       recoveredKeys: [],

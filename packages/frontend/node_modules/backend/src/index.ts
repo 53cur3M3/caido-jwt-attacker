@@ -10,7 +10,6 @@ import { buildJKUSpoofAttacks } from "./attacks/jkuSpoof.js";
 import { buildKIDInjectionAttacks } from "./attacks/kidInject.js";
 import { buildClaimTamperAttacks } from "./attacks/claimTamper.js";
 import { buildWeakSecretAttacks } from "./attacks/weakSecret.js";
-import { recoverPublicKeyFromJWTs } from "./crypto/keyRecovery.js";
 import { parseCookies, looksLikeJWT } from "./util.js";
 import type {
   AttackResult,
@@ -52,8 +51,13 @@ async function attackJwt(
   const sessionId = Math.random().toString(36).slice(2);
   const errors: string[] = [];
 
+  sdk.console.log(`[JWT Attacker] attackJwt called: requestId=${requestId}`);
+
   // Run asynchronously so we can return the sessionId immediately
   (async () => {
+    // Notify frontend immediately so the panel opens even if we abort early
+    sdk.api.send("jwt-attack-started", { sessionId, requestId, total: 0 });
+
     // Fetch the original request
     const reqResp = await sdk.requests.get(requestId);
     if (!reqResp) {
@@ -67,7 +71,7 @@ async function attackJwt(
     // Find JWTs in the request
     const locations = findJWTsInSpec(spec);
     if (locations.length === 0) {
-      sdk.api.send("jwt-attack-complete", { sessionId, errors: ["No JWT found in request"] });
+      sdk.api.send("jwt-attack-complete", { sessionId, errors: ["No JWT found in request (checked Authorization header, cookies, and JSON body)"] });
       return;
     }
 
@@ -84,71 +88,83 @@ async function attackJwt(
     }
 
     // ── Key recovery from HTTP history ─────────────────────────────────────
+    // Note: RSA key recovery via s^65537 is disabled — computing a 2048-bit
+    // BigInt raised to the 65537th power (no modular reduction) produces a
+    // ~16 MB integer that hangs LLRT's single-threaded event loop.
     const recoveredKeys: string[] = [];
-    const algFamily = getAlgorithmFamily(parsed.header.alg as string);
-    if (
-      config.enabledAttacks.algConfusion &&
-      (algFamily === "RS" || algFamily === "PS" || algFamily === "ES")
-    ) {
-      try {
-        const historyJWTs = await collectHistoryJWTs(sdk, request.getHost(), 100);
-        if (historyJWTs.length >= 2) {
-          sdk.api.send("jwt-key-recovery-progress", {
-            sessionId,
-            message: `Found ${historyJWTs.length} JWTs in history — attempting key recovery…`,
-          });
-          const keyResults = await recoverPublicKeyFromJWTs(
-            historyJWTs,
-            (msg) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: msg })
-          );
-          for (const r of keyResults) {
-            recoveredKeys.push(r.publicKeyPem);
-          }
-          sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: recoveredKeys });
-        }
-      } catch { /* non-fatal */ }
-    }
 
     // ── Build all attack variants ──────────────────────────────────────────
+    // The config can arrive partially serialized over RPC (e.g. a Vue reactive
+    // proxy losing its nested `enabledAttacks`), so normalize defensively —
+    // otherwise every `if (cfg.enabledAttacks.x)` would silently skip and we'd
+    // build zero attacks.
+    const cfg = normalizeConfig(config);
+    sdk.console.log(
+      `[JWT Attacker] enabled attacks: ${Object.entries(cfg.enabledAttacks)
+        .filter(([, v]) => v)
+        .map(([k]) => k)
+        .join(", ") || "(none)"}`
+    );
+
     const attacks: AttackResult[] = [];
 
     const merge = (arr: AttackResult[]) => attacks.push(...arr);
+    const tryMerge = async (name: string, fn: () => AttackResult[] | Promise<AttackResult[]>) => {
+      try {
+        merge(await fn());
+      } catch (e) {
+        errors.push(`[${name}] ${(e as Error).message}`);
+        sdk.console.log(`[JWT Attacker] ${name} builder failed: ${(e as Error).message}`);
+      }
+    };
 
-    if (config.enabledAttacks.none) merge(buildNoneAttacks(parsed));
-    if (config.enabledAttacks.nullSig) merge(buildNullSigAttacks(parsed));
-    if (config.enabledAttacks.embeddedJwk) merge(buildEmbeddedJWKAttacks(parsed));
-    if (config.enabledAttacks.kidInject) merge(buildKIDInjectionAttacks(parsed));
-    if (config.enabledAttacks.claimTamper) merge(buildClaimTamperAttacks(parsed));
+    if (cfg.enabledAttacks.none) await tryMerge("none", () => buildNoneAttacks(parsed));
+    if (cfg.enabledAttacks.nullSig) await tryMerge("nullSig", () => buildNullSigAttacks(parsed));
+    if (cfg.enabledAttacks.embeddedJwk) await tryMerge("embeddedJwk", () => buildEmbeddedJWKAttacks(parsed));
+    if (cfg.enabledAttacks.kidInject) await tryMerge("kidInject", () => buildKIDInjectionAttacks(parsed));
+    if (cfg.enabledAttacks.claimTamper) await tryMerge("claimTamper", () => buildClaimTamperAttacks(parsed));
 
-    if (config.enabledAttacks.weakSecret) {
-      merge(await buildWeakSecretAttacks(parsed, config, originalJWT));
+    if (cfg.enabledAttacks.weakSecret) {
+      await tryMerge("weakSecret", () => buildWeakSecretAttacks(parsed, cfg, originalJWT));
     }
 
-    if (config.enabledAttacks.jkuSpoof || config.enabledAttacks.x5uSpoof) {
-      const { attacks: spoofAttacks, jwksContent, jwksKey } = buildJKUSpoofAttacks(parsed, config);
-      merge(spoofAttacks);
-      if (jwksContent && jwksKey) {
-        sdk.api.send("jwks-payload", { sessionId, jwksJson: jwksContent, privateKeyPem: jwksKey });
+    if (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) {
+      try {
+        const { attacks: spoofAttacks, jwksContent, jwksKey } = buildJKUSpoofAttacks(parsed, cfg);
+        merge(spoofAttacks);
+        if (jwksContent && jwksKey) {
+          sdk.api.send("jwks-payload", { sessionId, jwksJson: jwksContent, privateKeyPem: jwksKey });
+        }
+      } catch (e) {
+        errors.push(`[jkuSpoof] ${(e as Error).message}`);
       }
     }
 
-    if (config.enabledAttacks.algConfusion) {
-      const confusionAttacks = await buildAlgConfusionAttacks(
+    if (cfg.enabledAttacks.algConfusion) {
+      await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
         parsed,
         request.getHost(),
         request.getPort(),
         request.getTls(),
-        config,
+        cfg,
         recoveredKeys
-      );
-      merge(confusionAttacks);
+      ));
     }
 
-    sdk.api.send("jwt-attack-started", {
-      sessionId,
-      requestId,
-      total: attacks.length,
-    });
+    sdk.console.log(`[JWT Attacker] built ${attacks.length} attack variant(s)`);
+
+    if (attacks.length === 0) {
+      sdk.api.send("jwt-attack-complete", {
+        sessionId,
+        errors: errors.length
+          ? errors
+          : ["No attack variants were generated — check that at least one attack is enabled in Configuration."],
+      });
+      return;
+    }
+
+    // Update the total now that we know how many attacks we have
+    sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length });
 
     // ── Send each attack request ───────────────────────────────────────────
     for (const attack of attacks) {
@@ -196,6 +212,37 @@ async function getJWTsInRequest(
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+const ALL_ATTACKS = [
+  "none", "nullSig", "algConfusion", "embeddedJwk", "jkuSpoof",
+  "x5uSpoof", "kidInject", "claimTamper", "weakSecret",
+] as const;
+
+// The config may arrive over RPC as a reactive proxy, a partial object, or even
+// undefined. Rebuild a plain, fully-populated PluginConfig so downstream code
+// can rely on its shape. If no attack flags survived, default them all to on.
+function normalizeConfig(raw: unknown): PluginConfig {
+  const c = (raw && typeof raw === "object" ? raw : {}) as Partial<PluginConfig>;
+  const rawEnabled = (c.enabledAttacks && typeof c.enabledAttacks === "object"
+    ? c.enabledAttacks
+    : {}) as Record<string, unknown>;
+
+  const hasAnyFlag = ALL_ATTACKS.some((k) => typeof rawEnabled[k] === "boolean");
+  const enabledAttacks: Record<string, boolean> = {};
+  for (const k of ALL_ATTACKS) {
+    enabledAttacks[k] = hasAnyFlag ? rawEnabled[k] === true : true;
+  }
+
+  return {
+    jwksUrl: typeof c.jwksUrl === "string" ? c.jwksUrl : "",
+    customPublicKeyPem: typeof c.customPublicKeyPem === "string" ? c.customPublicKeyPem : "",
+    customPrivateKeyPem: typeof c.customPrivateKeyPem === "string" ? c.customPrivateKeyPem : "",
+    customCertPem: typeof c.customCertPem === "string" ? c.customCertPem : "",
+    extraJwksPaths: Array.isArray(c.extraJwksPaths) ? c.extraJwksPaths : [],
+    customWordlist: Array.isArray(c.customWordlist) ? c.customWordlist : [],
+    enabledAttacks,
+  };
+}
 
 function findJWTsInSpec(spec: IRequestSpec): JwtLocation[] {
   const locations: JwtLocation[] = [];
@@ -313,14 +360,15 @@ async function collectHistoryJWTs(
   try {
     const page = await sdk.requests
       .query()
+      .filter(`req.host.eq:"${host}"`)
       .descending("req", "id")
       .first(limit)
       .execute();
 
     // RequestsConnection — cast to access items array
-    const conn = page as unknown as { items?: Array<{ request?: { getHost(): string; toSpec(): unknown } }> };
+    const conn = page as unknown as { items?: Array<{ request?: { toSpec(): unknown } }> };
     for (const item of conn.items ?? []) {
-      if (!item.request || item.request.getHost() !== host) continue;
+      if (!item.request) continue;
       const spec = item.request.toSpec() as unknown as IRequestSpec;
       const locs = findJWTsInSpec(spec);
       for (const loc of locs) {
@@ -346,6 +394,8 @@ export type API = DefineAPI<{
 }>;
 
 export function init(sdk: SDK<API, BackendEvents>): void {
+  sdk.console.log("[JWT Attacker] backend init() called");
   sdk.api.register("attackJwt", attackJwt);
   sdk.api.register("getJWTsInRequest", getJWTsInRequest);
+  sdk.console.log("[JWT Attacker] backend init() complete");
 }

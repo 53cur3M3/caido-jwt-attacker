@@ -35,6 +35,12 @@
       />
     </div>
 
+    <!-- Errors / warnings -->
+    <div v-if="session?.errors.length" class="px-3 py-1.5 bg-red-950 border-b border-red-800 text-xs text-red-300 max-h-28 overflow-y-auto">
+      <p class="font-semibold mb-0.5">⚠ {{ session.errors.length }} error(s):</p>
+      <p v-for="(msg, i) in session.errors" :key="i" class="font-mono break-all">{{ msg }}</p>
+    </div>
+
     <!-- Key recovery log -->
     <div v-if="session?.keyRecoveryLog.length" class="px-3 py-1.5 bg-yellow-950 border-b border-yellow-800 text-xs text-yellow-300 max-h-16 overflow-y-auto">
       <p v-for="(msg, i) in session.keyRecoveryLog" :key="i">{{ msg }}</p>

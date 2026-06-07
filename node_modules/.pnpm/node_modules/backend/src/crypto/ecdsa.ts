@@ -1,4 +1,4 @@
-import { generateKeyPairSync, createPublicKey } from "node:crypto";
+import { publicKeyPemToRawBytes, x509CertToPublicKeyPem } from "./rsa.js";
 import type { JWK } from "../types.js";
 
 export interface ECKeyPair {
@@ -8,39 +8,18 @@ export interface ECKeyPair {
   curve: string;
 }
 
-const ALG_TO_CURVE: Record<string, string> = {
-  ES256: "prime256v1",
-  ES384: "secp384r1",
-  ES512: "secp521r1",
-};
-
-export function generateECKeyPair(alg: "ES256" | "ES384" | "ES512"): ECKeyPair {
-  const curve = ALG_TO_CURVE[alg];
-  const { publicKey, privateKey } = generateKeyPairSync("ec", {
-    namedCurve: curve,
-    publicKeyEncoding: { type: "spki", format: "pem" },
-    privateKeyEncoding: { type: "pkcs8", format: "pem" },
-  });
-
-  const key = createPublicKey(publicKey);
-  const jwk = key.export({ format: "jwk" }) as JWK;
-
-  return { publicKeyPem: publicKey, privateKeyPem: privateKey, publicJwk: jwk, curve };
+// EC key generation requires Node.js crypto — not available in LLRT.
+export function generateECKeyPair(_alg: "ES256" | "ES384" | "ES512"): ECKeyPair {
+  throw new Error("EC key generation is not available in this runtime");
 }
 
+// Returns SPKI DER bytes of the public key (used as HMAC secret for algConfusion)
 export function ecPublicKeyPemToRawBytes(keyPem: string): Buffer {
-  const key = createPublicKey(keyPem);
-  return key.export({ type: "spki", format: "der" }) as Buffer;
+  return publicKeyPemToRawBytes(keyPem);
 }
 
 export function x509CertToECPublicKeyPem(certPem: string): string {
-  try {
-    const key = createPublicKey(certPem);
-    if (key.asymmetricKeyType !== "ec") throw new Error("Not an EC key");
-    return key.export({ type: "spki", format: "pem" }) as string;
-  } catch {
-    throw new Error("Failed to extract EC public key from certificate");
-  }
+  return x509CertToPublicKeyPem(certPem);
 }
 
 export function buildECJWKS(publicJwk: JWK, alg: string, kid = "jwt-attacker-ec-key"): object {
@@ -49,17 +28,11 @@ export function buildECJWKS(publicJwk: JWK, alg: string, kid = "jwt-attacker-ec-
   };
 }
 
-// ECDSA key recovery from two JWT signatures.
-// Returns candidate public key PEMs or empty array if recovery failed.
-// Partial implementation: for ES256 only, returns candidates without
-// full curve arithmetic (requires a dedicated EC math library for production use).
+// ECDSA key recovery from two JWT signatures — requires elliptic curve math not
+// available in this runtime.
 export async function recoverECPublicKeyCandidates(
   _jwt1: string,
   _jwt2: string
 ): Promise<string[]> {
-  // Full ECDSA key recovery requires implementing point arithmetic over
-  // secp256r1/secp384r1/secp521r1 curves natively.  This is deferred to
-  // a future release.  For now we return an empty array so callers can
-  // gracefully skip this path.
   return [];
 }

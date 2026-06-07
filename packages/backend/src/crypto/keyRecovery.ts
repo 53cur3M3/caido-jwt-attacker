@@ -15,9 +15,9 @@
  * This is intentionally run in a worker/background context.
  */
 
-import { createHash } from "node:crypto";
-import { createPublicKey } from "node:crypto";
+import { createHash } from "crypto";
 import { b64urlDecode } from "./jwt.js";
+import { encodeSequence, encodeInteger, encodeBitString } from "./rsa.js";
 import type { ParsedJWT } from "../types.js";
 
 // DER DigestInfo prefixes for PKCS#1 v1.5 encoding (rfc 3447 §9.2)
@@ -72,41 +72,19 @@ function bigintToPublicKeyPem(n: bigint, e: bigint = 65537n): string {
   const nBuf = Buffer.from(nHex.length % 2 ? "0" + nHex : nHex, "hex");
   const eBuf = Buffer.from(eHex.length % 2 ? "0" + eHex : eHex, "hex");
 
-  // Prefix with 0x00 if high bit is set (prevent sign confusion in DER)
   const nDer = nBuf[0] & 0x80 ? Buffer.concat([Buffer.from([0x00]), nBuf]) : nBuf;
   const eDer = eBuf[0] & 0x80 ? Buffer.concat([Buffer.from([0x00]), eBuf]) : eBuf;
 
-  const jwk = {
-    kty: "RSA",
-    n: nBuf.toString("base64url"),
-    e: eBuf.toString("base64url"),
-  };
+  const rsaKeySeq = encodeSequence(Buffer.concat([encodeInteger(nDer), encodeInteger(eDer)]));
+  const algId = encodeSequence(Buffer.concat([
+    Buffer.from("06092a864886f70d010101", "hex"),
+    Buffer.from("0500", "hex"),
+  ]));
+  const spki = encodeSequence(Buffer.concat([algId, encodeBitString(rsaKeySeq)]));
 
-  try {
-    const key = createPublicKey({ key: jwk, format: "jwk" });
-    return key.export({ type: "spki", format: "pem" }) as string;
-  } catch {
-    // Fall back to manual DER if Node.js rejects the JWK
-    const inner = encodeSequence(
-      Buffer.concat([encodeInteger(nDer), encodeInteger(eDer)])
-    );
-    const spki = encodeSequence(
-      Buffer.concat([
-        encodeSequence(
-          Buffer.concat([
-            // OID rsaEncryption
-            Buffer.from("06092a864886f70d010101", "hex"),
-            Buffer.from("0500", "hex"), // NULL
-          ])
-        ),
-        encodeBitString(inner),
-      ])
-    );
-
-    const b64 = spki.toString("base64");
-    const lines = b64.match(/.{1,64}/g)!.join("\n");
-    return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----\n`;
-  }
+  const b64 = spki.toString("base64");
+  const lines = b64.match(/.{1,64}/g)!.join("\n");
+  return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----\n`;
 }
 
 function encodeLength(len: number): Buffer {

