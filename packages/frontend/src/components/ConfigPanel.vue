@@ -153,3 +153,19 @@ async function save() {
   setTimeout(() => { saved.value = false; }, 2000);
 }
 </script>
+
+<style scoped>
+/* Caido's host styles override the Tailwind bg utility on form controls, leaving
+   them white with low-contrast text. Force a dark-ish gray (matching the Caido
+   left menu colour) with light text so the fields are readable. */
+input:not([type="checkbox"]),
+textarea {
+  background-color: rgb(107 114 128) !important;
+  color: #f9fafb !important;
+}
+input:not([type="checkbox"])::placeholder,
+textarea::placeholder {
+  color: #e5e7eb !important;
+  opacity: 0.7;
+}
+</style>

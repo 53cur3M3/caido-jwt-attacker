@@ -13,6 +13,7 @@
       "kind": "frontend",
       "name": "JWT Attacker Frontend",
       "entrypoint": "frontend/index.js",
+      "style": "frontend/index.css",
       "backend": {
         "id": "backend"
       }

@@ -14656,10 +14656,15 @@ appkey123`,
       ])
     ]));
   }
-}), F0 = {
+}), F0 = (e, t) => {
+  const r = e.__vccOpts || e;
+  for (const [o, s] of t)
+    r[o] = s;
+  return r;
+}, D0 = /* @__PURE__ */ F0(M0, [["__scopeId", "data-v-d786cead"]]), V0 = {
   id: "plugin--jwt-attacker",
   class: "h-full flex flex-col bg-gray-950 text-gray-200 overflow-hidden"
-}, D0 = { class: "flex items-center gap-1 px-3 py-2 border-b border-gray-700 bg-gray-900 shrink-0" }, V0 = ["onClick"], B0 = { class: "flex-1 flex overflow-hidden min-h-0" }, H0 = { class: "w-[42%] shrink-0 border-r border-gray-700 overflow-hidden flex flex-col" }, K0 = { class: "flex-1 overflow-hidden" }, W0 = { class: "flex-1 overflow-hidden" }, J0 = { class: "bg-gray-900 border border-gray-700 rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl" }, U0 = { class: "flex items-center justify-between px-4 py-3 border-b border-gray-700" }, G0 = { class: "flex-1 overflow-y-auto px-4 py-4 space-y-4" }, q0 = { class: "bg-gray-800 rounded p-3 text-xs text-green-300 overflow-x-auto select-all max-h-48" }, Y0 = { key: 0 }, X0 = { class: "bg-gray-800 rounded p-3 text-xs text-yellow-300 overflow-x-auto select-all max-h-36" }, Q0 = /* @__PURE__ */ vr({
+}, B0 = { class: "flex items-center gap-1 px-3 py-2 border-b border-gray-700 bg-gray-900 shrink-0" }, H0 = ["onClick"], K0 = { class: "flex-1 flex overflow-hidden min-h-0" }, W0 = { class: "w-[42%] shrink-0 border-r border-gray-700 overflow-hidden flex flex-col" }, J0 = { class: "flex-1 overflow-hidden" }, U0 = { class: "flex-1 overflow-hidden" }, G0 = { class: "bg-gray-900 border border-gray-700 rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl" }, q0 = { class: "flex items-center justify-between px-4 py-3 border-b border-gray-700" }, Y0 = { class: "flex-1 overflow-y-auto px-4 py-4 space-y-4" }, X0 = { class: "bg-gray-800 rounded p-3 text-xs text-green-300 overflow-x-auto select-all max-h-48" }, Q0 = { key: 0 }, Z0 = { class: "bg-gray-800 rounded p-3 text-xs text-yellow-300 overflow-x-auto select-all max-h-36" }, ep = /* @__PURE__ */ vr({
   __name: "App",
   setup(e) {
     const t = ce("results"), r = ce(null), o = ce(null), s = ce(null);
@@ -14678,9 +14683,9 @@ appkey123`,
     }
     return (u, c) => {
       var p, h;
-      return O(), I("div", F0, [
+      return O(), I("div", V0, [
         R(" Top bar "),
-        g("div", D0, [
+        g("div", B0, [
           c[5] || (c[5] = g(
             "span",
             { class: "text-base font-bold text-yellow-400 mr-2" },
@@ -14698,7 +14703,7 @@ appkey123`,
                 "px-3 py-1 rounded text-xs font-medium transition-colors",
                 t.value === b.id ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"
               ])
-            }, E(b.label), 11, V0)),
+            }, E(b.label), 11, H0)),
             64
             /* STABLE_FRAGMENT */
           ))
@@ -14706,9 +14711,9 @@ appkey123`,
         R(" Results tab: split pane "),
         Ct(g(
           "div",
-          B0,
+          K0,
           [
-            g("div", H0, [
+            g("div", W0, [
               He(xf, {
                 "selected-id": (p = r.value) == null ? void 0 : p.id,
                 "selected-endpoint-url": (h = o.value) == null ? void 0 : h.url,
@@ -14717,7 +14722,7 @@ appkey123`,
                 onShowJwks: c[0] || (c[0] = (b) => s.value = b)
               }, null, 8, ["selected-id", "selected-endpoint-url"])
             ]),
-            g("div", K0, [
+            g("div", J0, [
               o.value ? (O(), To(j0, {
                 key: 0,
                 endpoint: o.value
@@ -14735,9 +14740,9 @@ appkey123`,
         R(" Config tab "),
         Ct(g(
           "div",
-          W0,
+          U0,
           [
-            He(M0)
+            He(D0)
           ],
           512
           /* NEED_PATCH */
@@ -14750,8 +14755,8 @@ appkey123`,
           class: "fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6",
           onClick: c[4] || (c[4] = Gl((b) => s.value = null, ["self"]))
         }, [
-          g("div", J0, [
-            g("div", U0, [
+          g("div", G0, [
+            g("div", q0, [
               c[6] || (c[6] = g(
                 "h2",
                 { class: "text-sm font-semibold" },
@@ -14764,7 +14769,7 @@ appkey123`,
                 class: "text-gray-500 hover:text-gray-300 text-lg leading-none"
               }, "✕")
             ]),
-            g("div", G0, [
+            g("div", Y0, [
               g("div", null, [
                 c[7] || (c[7] = g(
                   "p",
@@ -14775,7 +14780,7 @@ appkey123`,
                 )),
                 g(
                   "pre",
-                  q0,
+                  X0,
                   E(s.value.jwksJson),
                   1
                   /* TEXT */
@@ -14785,7 +14790,7 @@ appkey123`,
                   class: "mt-1 text-xs text-gray-500 hover:text-gray-300"
                 }, "Copy JWKS")
               ]),
-              s.value.jwksPrivateKey ? (O(), I("div", Y0, [
+              s.value.jwksPrivateKey ? (O(), I("div", Q0, [
                 c[8] || (c[8] = g(
                   "p",
                   { class: "text-xs text-gray-400 mb-2" },
@@ -14795,7 +14800,7 @@ appkey123`,
                 )),
                 g(
                   "pre",
-                  X0,
+                  Z0,
                   E(s.value.jwksPrivateKey),
                   1
                   /* TEXT */
@@ -14812,9 +14817,9 @@ appkey123`,
     };
   }
 });
-function Z0(e) {
+function tp(e) {
   console.log("[JWT Attacker] init() called");
-  const t = Xl(Q0), r = ec();
+  const t = Xl(ep), r = ec();
   t.use(r), t.use(Yc, { unstyled: !0, pt: Dd });
   const o = document.createElement("div");
   o.id = "plugin--jwt-attacker-root", o.style.cssText = "height:100%;width:100%;overflow:hidden;", t.mount(o), e.navigation.addPage("/jwt-attacker", { body: o }), e.sidebar.registerItem("JWT Attacker", "/jwt-attacker", { icon: "fas fa-key" });
@@ -14875,5 +14880,5 @@ function Z0(e) {
   }), console.log("[JWT Attacker] init() complete — commands and menu items registered");
 }
 export {
-  Z0 as init
+  tp as init
 };
