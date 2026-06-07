@@ -12,6 +12,12 @@ export interface AttackResult {
   error?: string;
   timestamp: number;
   durationMs?: number;
+  // For algorithm-confusion attacks: the public key / certificate PEM used as
+  // the HMAC secret basis, which encoding of it was signed with, and the original
+  // (unmodified) token — used to render jwt_tool reproduction commands.
+  keyPem?: string;
+  secretEncoding?: string;
+  originalJWT?: string;
 }
 
 export interface DiscoveredEndpoint {

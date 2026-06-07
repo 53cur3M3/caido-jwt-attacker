@@ -37,6 +37,18 @@
         </button>
       </section>
 
+      <!-- Public key / certificate used (algorithm confusion) -->
+      <section v-if="result.keyPem" class="px-4 py-3 border-b border-gray-700">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">
+          Public Key / Certificate Used
+          <span v-if="result.secretEncoding" class="text-orange-300 normal-case"> — HMAC secret: {{ result.secretEncoding }}</span>
+        </p>
+        <pre class="bg-gray-900 rounded p-2 text-xs text-green-300 overflow-x-auto max-h-48 overflow-y-auto select-all whitespace-pre">{{ result.keyPem }}</pre>
+        <button @click="copyKey" class="mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+          {{ copiedKey ? "✓ Copied" : "Copy PEM" }}
+        </button>
+      </section>
+
       <!-- Decoded header -->
       <section v-if="decodedHeader" class="px-4 py-3 border-b border-gray-700">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Decoded Header</p>
@@ -61,9 +73,25 @@
       </section>
 
       <!-- Response body -->
-      <section v-if="result.responseBody" class="px-4 py-3">
+      <section v-if="result.responseBody" class="px-4 py-3 border-b border-gray-700">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Response Body</p>
         <pre class="bg-gray-900 rounded p-2 text-xs text-gray-300 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap break-all">{{ result.responseBody }}</pre>
+      </section>
+
+      <!-- Reproduce with jwt_tool (algorithm confusion only) -->
+      <section v-if="jwtToolCommands" class="px-4 py-3">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Reproduce with jwt_tool</p>
+        <p class="text-xs text-gray-500 mb-1.5">
+          Writes the exact HMAC secret ({{ result.secretEncoding }}) to a file, then forges the
+          same token. jwt_tool keeps the original header &amp; payload and only swaps <code>alg</code>.
+        </p>
+        <pre class="bg-gray-900 rounded p-2 text-xs text-cyan-300 overflow-x-auto max-h-48 overflow-y-auto select-all whitespace-pre-wrap break-all">{{ jwtToolCommands }}</pre>
+        <button @click="copyCmds" class="mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+          {{ copiedCmds ? "✓ Copied" : "Copy commands" }}
+        </button>
+        <p v-if="result.secretEncoding === 'DER'" class="text-xs text-orange-300 mt-1.5">
+          Note: the DER variant is raw binary; jwt_tool reads the key file as text and may fail on it.
+        </p>
       </section>
     </div>
   </div>
@@ -81,6 +109,31 @@ import { b64urlDecode } from "../utils.js";
 const props = defineProps<{ result: AttackResult | null }>();
 
 const copied = ref(false);
+const copiedKey = ref(false);
+const copiedCmds = ref(false);
+
+// Base64 of the EXACT secret bytes used for this variant (mirrors the backend
+// secretVariants()), so the jwt_tool key file can be reconstructed byte-for-byte.
+function secretBase64(pem: string, encoding: string): string {
+  const norm = pem.replace(/\r\n/g, "\n");
+  switch (encoding) {
+    case "PEM (no trailing LF)": return btoa(norm.replace(/\n+$/, ""));
+    case "base64(PEM)": return btoa(btoa(norm));
+    case "DER": return norm.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+    case "PEM":
+    default: return btoa(norm);
+  }
+}
+
+const jwtToolCommands = computed(() => {
+  const r = props.result;
+  if (!r || r.technique !== "algConfusion" || !r.keyPem || !r.originalJWT) return null;
+  const b64 = secretBase64(r.keyPem, r.secretEncoding ?? "PEM");
+  return (
+    `echo -n '${b64}' | base64 -d > /tmp/jwt_pubkey\n` +
+    `python3 jwt_tool.py '${r.originalJWT}' -X k -pk /tmp/jwt_pubkey`
+  );
+});
 
 const jwtParts = computed(() => {
   if (!props.result) return ["", "", ""];
@@ -113,5 +166,19 @@ async function copyJWT() {
   await navigator.clipboard.writeText(props.result.modifiedJWT);
   copied.value = true;
   setTimeout(() => { copied.value = false; }, 1500);
+}
+
+async function copyKey() {
+  if (!props.result?.keyPem) return;
+  await navigator.clipboard.writeText(props.result.keyPem);
+  copiedKey.value = true;
+  setTimeout(() => { copiedKey.value = false; }, 1500);
+}
+
+async function copyCmds() {
+  if (!jwtToolCommands.value) return;
+  await navigator.clipboard.writeText(jwtToolCommands.value);
+  copiedCmds.value = true;
+  setTimeout(() => { copiedCmds.value = false; }, 1500);
 }
 </script>

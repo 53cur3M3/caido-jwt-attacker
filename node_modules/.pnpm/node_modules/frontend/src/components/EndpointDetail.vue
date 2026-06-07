@@ -31,16 +31,29 @@
         <p class="text-gray-300 text-xs">{{ endpoint.keyCount }}</p>
       </section>
 
-      <!-- PEM-encoded keys -->
-      <section v-if="endpoint.pems.length" class="px-4 py-3 border-b border-gray-700">
+      <!-- PEM keys + the HMAC secret encodings used in algorithm confusion -->
+      <section v-if="keyDetails.length" class="px-4 py-3 border-b border-gray-700">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">
-          PEM-encoded {{ endpoint.pems.length > 1 ? 'keys' : 'key' }}
+          PEM-encoded {{ keyDetails.length > 1 ? 'keys' : 'key' }} used in algorithm-confusion attacks
         </p>
-        <div v-for="(pem, i) in endpoint.pems" :key="i" class="mb-2 last:mb-0">
-          <pre class="bg-gray-900 rounded p-2 text-xs text-green-300 overflow-x-auto max-h-48 overflow-y-auto select-all whitespace-pre">{{ pem }}</pre>
-          <button @click="copy(pem, 'pem-' + i)" class="mt-1 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+        <div v-for="(kd, i) in keyDetails" :key="i" class="mb-4 last:mb-0">
+          <pre class="bg-gray-900 rounded p-2 text-xs text-green-300 overflow-x-auto max-h-48 overflow-y-auto select-all whitespace-pre">{{ kd.pem }}</pre>
+          <button @click="copy(kd.pem, 'pem-' + i)" class="mt-1 text-xs text-gray-500 hover:text-gray-300 transition-colors">
             {{ copiedKey === 'pem-' + i ? '✓ Copied' : 'Copy PEM' }}
           </button>
+
+          <p class="text-xs text-gray-500 mt-2 mb-1">
+            HMAC secret encodings tried with this key (key {{ i + 1 }}):
+          </p>
+          <div v-for="(v, j) in kd.variants" :key="j" class="mb-1.5">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-orange-300">{{ v.label }}</span>
+              <button @click="copy(v.value, `var-${i}-${j}`)" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                {{ copiedKey === `var-${i}-${j}` ? '✓ Copied' : 'Copy' }}
+              </button>
+            </div>
+            <pre class="bg-gray-900 rounded p-2 text-xs text-gray-300 overflow-x-auto max-h-24 overflow-y-auto select-all whitespace-pre-wrap break-all">{{ v.value }}</pre>
+          </div>
         </div>
       </section>
 
@@ -60,12 +73,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import type { DiscoveredEndpoint } from "../types.js";
 
-defineProps<{ endpoint: DiscoveredEndpoint | null }>();
+const props = defineProps<{ endpoint: DiscoveredEndpoint | null }>();
 
 const copiedKey = ref<string | null>(null);
+
+// Mirror the backend's secretVariants(): the exact HMAC secret encodings the
+// algorithm-confusion attack signs with, derived from each extracted public key.
+function secretVariants(pem: string): Array<{ label: string; value: string }> {
+  const norm = pem.replace(/\r\n/g, "\n");
+  return [
+    { label: "PEM", value: norm },
+    { label: "PEM (no trailing LF)", value: norm.replace(/\n+$/, "") },
+    { label: "base64(PEM)", value: btoa(norm) },
+    { label: "DER (base64)", value: norm.replace(/-----[^-]+-----/g, "").replace(/\s/g, "") },
+  ];
+}
+
+const keyDetails = computed(() =>
+  (props.endpoint?.pems ?? []).map((pem) => ({ pem, variants: secretVariants(pem) }))
+);
 
 async function copy(text: string, key: string) {
   await navigator.clipboard.writeText(text);

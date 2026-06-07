@@ -73,6 +73,20 @@ export function signHMAC(
   return `${signingInput}.${sig}`;
 }
 
+// HMAC-sign a pre-built signing input (`headerB64.payloadB64`) verbatim. Used by
+// the algorithm-confusion attack so it can reuse the original payload's base64
+// exactly (no re-serialization), matching how jwt_tool's `-X k` builds the token.
+export function signHMACRaw(
+  signingInput: string,
+  secret: Buffer,
+  alg: "HS256" | "HS384" | "HS512"
+): string {
+  const hashMap = { HS256: "sha256", HS384: "sha384", HS512: "sha512" } as const;
+  const hmac = createHmac(hashMap[alg], secret);
+  hmac.update(signingInput);
+  return `${signingInput}.${b64urlEncode(hmac.digest())}`;
+}
+
 // ─── RSA signing via pure-JS BigInt (PKCS#1 v1.5 only) ─────────────────────
 
 // DER DigestInfo prefixes for EMSA-PKCS1-v1_5
