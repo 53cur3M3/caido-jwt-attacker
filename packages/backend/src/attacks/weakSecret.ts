@@ -49,6 +49,7 @@ export async function buildWeakSecretAttacks(
         "Provides re-signed token with elevated claims (admin=true, role=admin, +1yr exp).",
       modifiedJWT: adminJwt,
       timestamp: Date.now(),
+      hmacSecret: word,
     });
 
     results.push({
@@ -60,6 +61,7 @@ export async function buildWeakSecretAttacks(
         "Useful to verify the server accepts the cracked secret.",
       modifiedJWT: resignedJwt,
       timestamp: Date.now(),
+      hmacSecret: word,
     });
   }
 

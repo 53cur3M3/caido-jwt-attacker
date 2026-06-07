@@ -189,6 +189,12 @@ async function attackJwt(
 
     sdk.console.log(`[JWT Attacker] built ${attacks.length} attack variant(s)`);
 
+    // Make the original token available on every attack so the UI can render
+    // jwt_tool reproduction commands for each technique.
+    for (const a of attacks) {
+      if (!a.originalJWT) a.originalJWT = originalJWT;
+    }
+
     // Baseline: the unmodified original request, sent first so the analyst has a
     // reference response (status / length) to compare every attack against.
     const baseline: AttackResult = {

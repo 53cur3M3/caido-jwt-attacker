@@ -66,6 +66,9 @@ export interface AttackResult {
   keyPem?: string;
   secretEncoding?: string;
   originalJWT?: string;
+  // For HMAC-based attacks (kid injection, weak secret): the plaintext HMAC
+  // secret used to sign — needed for jwt_tool reproduction commands.
+  hmacSecret?: string;
 }
 
 export interface PluginConfig {

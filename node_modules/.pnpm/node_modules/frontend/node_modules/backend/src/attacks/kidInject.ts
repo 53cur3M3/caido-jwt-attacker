@@ -138,6 +138,7 @@ function buildHSAttack(
     description: `Injects kid="${payload.kid}" — ${payload.description}`,
     modifiedJWT: jwt,
     timestamp: Date.now(),
+    hmacSecret: payload.secret.toString("utf8"),
   };
 }
 

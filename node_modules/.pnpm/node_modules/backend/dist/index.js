@@ -1312,7 +1312,8 @@ function buildHSAttack(parsed, payload, category) {
     techniqueName: `KID Injection \u2014 ${category}`,
     description: `Injects kid="${payload.kid}" \u2014 ${payload.description}`,
     modifiedJWT: jwt,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    hmacSecret: payload.secret.toString("utf8")
   };
 }
 function buildKIDInjectionAttacks(parsed) {
@@ -1637,7 +1638,8 @@ async function buildWeakSecretAttacks(parsed, config, originalToken) {
       techniqueName: `Weak Secret Found: "${word}"`,
       description: `Cracked the ${hmacAlg} signing secret: "${word}". Provides re-signed token with elevated claims (admin=true, role=admin, +1yr exp).`,
       modifiedJWT: adminJwt,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      hmacSecret: word
     });
     results.push({
       id: nanoid(),
@@ -1645,7 +1647,8 @@ async function buildWeakSecretAttacks(parsed, config, originalToken) {
       techniqueName: `Weak Secret Re-sign (original claims): "${word}"`,
       description: `Re-signs the original token with secret "${word}" \u2014 no claim changes. Useful to verify the server accepts the cracked secret.`,
       modifiedJWT: resignedJwt,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      hmacSecret: word
     });
   }
   return results;
@@ -1752,6 +1755,9 @@ async function attackJwt(sdk, requestId, config) {
       ));
     }
     sdk.console.log(`[JWT Attacker] built ${attacks.length} attack variant(s)`);
+    for (const a of attacks) {
+      if (!a.originalJWT) a.originalJWT = originalJWT;
+    }
     const baseline = {
       id: nanoid(),
       technique: "baseline",
