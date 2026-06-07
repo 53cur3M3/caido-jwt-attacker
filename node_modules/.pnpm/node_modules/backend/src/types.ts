@@ -70,6 +70,9 @@ export interface PluginConfig {
   extraJwksPaths: string[];
   customWordlist: string[];
   enabledAttacks: Record<string, boolean>;
+  // Opt-in: RSA public-key recovery from 2+ history JWTs. Off by default because
+  // the integer arithmetic (sig^65537) is extremely slow in a pure-JS runtime.
+  enableKeyRecovery: boolean;
 }
 
 export const DEFAULT_CONFIG: PluginConfig = {
@@ -79,6 +82,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
   customCertPem: "",
   extraJwksPaths: [],
   customWordlist: [],
+  enableKeyRecovery: false,
   enabledAttacks: {
     none: true,
     nullSig: true,
@@ -94,19 +98,32 @@ export const DEFAULT_CONFIG: PluginConfig = {
 
 export const COMMON_JWKS_PATHS = [
   "/.well-known/jwks.json",
-  "/.well-known/openid-configuration",
-  "/jwks.json",
-  "/jwks",
-  "/.well-known/keys",
-  "/api/auth/keys",
-  "/api/auth/jwks",
+  "/.well-known/openid-configuration", // parsed to follow its jwks_uri
   "/oauth/jwks",
-  "/oauth/v2/keys",
+  "/oauth2/jwks",
+  "/oauth2/v1/keys",
+  "/oauth2/v3/certs",
+  "/v1/keys",
   "/v2/keys",
+  "/.well-known/keys",
   "/auth/keys",
+  "/auth/realms/master/protocol/openid-connect/certs", // Keycloak ({realm}=master)
+  "/realms/master/protocol/openid-connect/certs",       // Keycloak (newer layout)
+  "/jwks",
+  "/jwks.json",
+  "/api/auth/jwks",
+  "/api/jwks",
+  "/api/v1/jwks",
+  "/api/v2/jwks",
+  "/.well-known/pki-validation/jwks.json",
+  "/common/discovery/keys",      // Azure AD
+  "/discovery/v2.0/keys",        // Azure AD
+  "/oauth2/default/v1/keys",     // Okta
+  // Retained extras from prior list
+  "/api/auth/keys",
+  "/oauth/v2/keys",
   "/auth/jwks",
   "/.well-known/jwt-keys",
   "/api/v1/jwks.json",
-  "/realms/master/protocol/openid-connect/certs",
   "/connect/jwks_uri",
 ];

@@ -26,6 +26,7 @@ export const useAttackStore = defineStore("attacks", () => {
       complete: false,
       errors: [],
       recoveredKeys: [],
+      discoveredEndpoints: [],
       keyRecoveryLog: [],
     };
     sessions.value.unshift(session);
@@ -60,6 +61,16 @@ export const useAttackStore = defineStore("attacks", () => {
     if (s) s.keyRecoveryLog.push(message);
   }
 
+  function addDiscoveredEndpoint(
+    sessionId: string,
+    endpoint: AttackSession["discoveredEndpoints"][number]
+  ) {
+    const s = sessions.value.find((x) => x.sessionId === sessionId);
+    if (s && !s.discoveredEndpoints.some((e) => e.url === endpoint.url)) {
+      s.discoveredEndpoints.push(endpoint);
+    }
+  }
+
   function setJWKSPayload(sessionId: string, jwksJson: string, jwksPrivateKey: string) {
     const s = sessions.value.find((x) => x.sessionId === sessionId);
     if (s) {
@@ -87,6 +98,7 @@ export const useAttackStore = defineStore("attacks", () => {
     completeSession,
     addRecoveredKey,
     logKeyRecovery,
+    addDiscoveredEndpoint,
     setJWKSPayload,
     setActiveSession,
     clearSessions,

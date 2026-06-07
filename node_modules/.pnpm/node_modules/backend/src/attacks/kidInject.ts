@@ -81,11 +81,6 @@ const SQL_INJECTION_KIDS: KidPayload[] = [
     secret: Buffer.from("secret"),
     description: "SQL UNION injection (double-quote variant)",
   },
-  {
-    kid: "; DROP TABLE users--",
-    secret: Buffer.from(""),
-    description: "SQL statement termination injection",
-  },
 ];
 
 const SSRF_KIDS: KidPayload[] = [
@@ -98,11 +93,6 @@ const SSRF_KIDS: KidPayload[] = [
     kid: "http://metadata.google.internal/computeMetadata/v1/",
     secret: Buffer.from(""),
     description: "SSRF to GCP metadata endpoint",
-  },
-  {
-    kid: "http://100.100.100.200/latest/meta-data/",
-    secret: Buffer.from(""),
-    description: "SSRF to Alibaba Cloud metadata endpoint",
   },
   {
     kid: "http://localhost/",

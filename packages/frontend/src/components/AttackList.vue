@@ -17,6 +17,7 @@
           {{ session.results.length }}/{{ session.total }} attacks
           <span v-if="!session.complete" class="ml-1 text-yellow-400 animate-pulse">running…</span>
           <span v-else class="ml-1 text-green-400">✓ complete</span>
+          <span v-if="session.discoveredEndpoints.length" class="ml-2 text-cyan-400">🔎 {{ session.discoveredEndpoints.length }} key endpoint(s)</span>
         </template>
         <template v-else>No active session</template>
       </span>
@@ -25,6 +26,15 @@
         @click="store.clearSessions()"
         class="text-xs text-gray-500 hover:text-red-400 transition-colors"
       >Clear</button>
+    </div>
+
+    <!-- Discovered JWKS / key endpoints — highlighted so the analyst can't miss it -->
+    <div v-if="session?.discoveredEndpoints.length" class="px-3 py-2 bg-cyan-950 border-b-2 border-cyan-600 text-xs text-cyan-200">
+      <p class="font-semibold mb-1">🔎 {{ session.discoveredEndpoints.length }} key endpoint(s) discovered on the target:</p>
+      <p v-for="(ep, i) in session.discoveredEndpoints" :key="i" class="font-mono break-all leading-snug">
+        <span class="text-cyan-400">[{{ ep.source }}]</span> {{ ep.url }}
+        <span v-if="ep.keyCount" class="text-cyan-500">— {{ ep.keyCount }} key(s)</span>
+      </p>
     </div>
 
     <!-- Progress bar -->

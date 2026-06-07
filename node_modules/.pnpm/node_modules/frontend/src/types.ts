@@ -14,6 +14,12 @@ export interface AttackResult {
   durationMs?: number;
 }
 
+export interface DiscoveredEndpoint {
+  url: string;
+  source: string;
+  keyCount: number;
+}
+
 export interface AttackSession {
   sessionId: string;
   requestId: string;
@@ -23,6 +29,7 @@ export interface AttackSession {
   complete: boolean;
   errors: string[];
   recoveredKeys: string[];
+  discoveredEndpoints: DiscoveredEndpoint[];
   jwksJson?: string;
   jwksPrivateKey?: string;
   keyRecoveryLog: string[];
@@ -36,6 +43,9 @@ export interface PluginConfig {
   extraJwksPaths: string[];
   customWordlist: string[];
   enabledAttacks: Record<string, boolean>;
+  // Opt-in: RSA public-key recovery from 2+ history JWTs. Off by default because
+  // the integer arithmetic (sig^65537) is extremely slow in a pure-JS runtime.
+  enableKeyRecovery: boolean;
 }
 
 export const DEFAULT_CONFIG: PluginConfig = {
@@ -45,6 +55,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
   customCertPem: "",
   extraJwksPaths: [],
   customWordlist: [],
+  enableKeyRecovery: false,
   enabledAttacks: {
     none: true,
     nullSig: true,
@@ -80,6 +91,7 @@ export function statusColor(status?: number): string {
 
 export function techniqueColor(technique: string): string {
   const palette: Record<string, string> = {
+    baseline: "bg-gray-600 text-gray-100",
     none: "bg-red-900 text-red-200",
     nullSig: "bg-red-900 text-red-200",
     algConfusion: "bg-orange-900 text-orange-200",

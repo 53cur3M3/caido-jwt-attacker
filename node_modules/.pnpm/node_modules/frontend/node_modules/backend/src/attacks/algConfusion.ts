@@ -15,7 +15,7 @@
 import { signHMAC } from "../crypto/jwt.js";
 import { publicKeyPemToRawBytes, x509CertToPublicKeyPem, jwkToPublicKeyPem, jwksToPublicKeys } from "../crypto/rsa.js";
 import { ecPublicKeyPemToRawBytes, x509CertToECPublicKeyPem } from "../crypto/ecdsa.js";
-import { fetchTLSCertPem, discoverJWKS, fetchJWKS } from "../crypto/certFetch.js";
+import { fetchTLSCertPem, discoverJWKS, fetchJWKS, discoverPublicKeys, type UrlFetcher } from "../crypto/certFetch.js";
 import type { ParsedJWT, AttackResult, PluginConfig } from "../types.js";
 import { nanoid } from "../util.js";
 
@@ -66,13 +66,40 @@ function makeAttack(
   };
 }
 
+// Build alg-confusion attacks for an explicit set of public-key PEMs (e.g. keys
+// recovered from HTTP history). Avoids re-running network discovery.
+export function buildAlgConfusionForKeys(
+  parsed: ParsedJWT,
+  keyPems: string[],
+  sourceDesc: string
+): AttackResult[] {
+  const originalAlg = parsed.header.alg as string;
+  if (!isAsymmetricAlg(originalAlg)) return [];
+  const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
+  const out: AttackResult[] = [];
+  for (const pem of keyPems) {
+    try {
+      out.push(makeAttack(parsed, hmacAlg, pem, sourceDesc));
+    } catch { /* skip invalid keys */ }
+  }
+  return out;
+}
+
+export interface DiscoveryInfo {
+  url: string;
+  source: "JWKS endpoint" | "certificate" | "public-key";
+  keyCount: number;
+}
+
 export async function buildAlgConfusionAttacks(
   parsed: ParsedJWT,
   requestHost: string,
   requestPort: number,
   requestTls: boolean,
   config: PluginConfig,
-  recoveredKeys: string[] = []
+  recoveredKeys: string[] = [],
+  onDiscovery?: (info: DiscoveryInfo) => void,
+  fetcher?: UrlFetcher
 ): Promise<AttackResult[]> {
   const originalAlg = parsed.header.alg as string;
   if (!isAsymmetricAlg(originalAlg)) return [];
@@ -109,9 +136,9 @@ export async function buildAlgConfusionAttacks(
   }
 
   // 3. Embedded jku in the original token
-  if (parsed.header.jku) {
+  if (parsed.header.jku && fetcher) {
     try {
-      const jwks = await fetchJWKS(parsed.header.jku as string);
+      const jwks = await fetchJWKS(fetcher, parsed.header.jku as string);
       if (jwks) {
         for (const pem of jwksToPublicKeys(jwks)) {
           addKey(pem, `jku (${parsed.header.jku})`);
@@ -137,16 +164,30 @@ export async function buildAlgConfusionAttacks(
     : `:${requestPort}`;
   const baseUrl = `${proto}://${requestHost}${port}`;
 
-  try {
-    const discovered = await discoverJWKS(baseUrl, config.extraJwksPaths);
-    for (const result of discovered) {
-      for (const pem of jwksToPublicKeys({ keys: result.keys })) {
-        addKey(pem, `JWKS (${result.url})`);
+  if (fetcher) {
+    try {
+      const discovered = await discoverJWKS(fetcher, baseUrl, config.extraJwksPaths);
+      for (const result of discovered) {
+        const pems = jwksToPublicKeys({ keys: result.keys });
+        for (const pem of pems) {
+          addKey(pem, `JWKS (${result.url})`);
+        }
+        // Surface the discovered JWKS endpoint so the analyst doesn't miss it.
+        onDiscovery?.({ url: result.url, source: "JWKS endpoint", keyCount: pems.length });
       }
-    }
-  } catch { /* ignore */ }
+    } catch { /* ignore */ }
 
-  // 6. Keys recovered from HTTP history analysis
+    // 6. Probe common certificate / public-key file locations on the host
+    try {
+      const keys = await discoverPublicKeys(fetcher, baseUrl);
+      for (const k of keys) {
+        addKey(k.publicKeyPem, `${k.kind} at ${k.url}`);
+        onDiscovery?.({ url: k.url, source: k.kind, keyCount: 1 });
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 7. Keys recovered from HTTP history analysis
   for (const pem of recoveredKeys) {
     addKey(pem, "recovered from HTTP history");
   }

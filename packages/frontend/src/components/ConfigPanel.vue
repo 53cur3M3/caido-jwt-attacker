@@ -90,6 +90,25 @@
       </div>
     </section>
 
+    <section>
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Experimental</h2>
+      <label class="flex items-start gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          v-model="cfg.enableKeyRecovery"
+          class="accent-blue-500 mt-0.5"
+        />
+        <span class="text-gray-300">
+          RSA public-key recovery from HTTP history
+          <span class="block text-xs text-gray-500 mt-0.5">
+            Attempts to recover the signing key from 2+ same-host RS/PS JWTs, then runs
+            algorithm-confusion with it. Off by default — the math (sig<sup>65537</sup>) is
+            extremely slow in Caido's JS runtime and may take many minutes or not finish.
+          </span>
+        </span>
+      </label>
+    </section>
+
     <div class="pt-2 flex gap-3">
       <button
         @click="save"

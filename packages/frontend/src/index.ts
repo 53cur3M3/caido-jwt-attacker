@@ -64,6 +64,10 @@ export function init(sdk: CaidoSDK) {
     attackStore.setJWKSPayload(sessionId, jwksJson, privateKeyPem);
   });
 
+  sdk.backend.onEvent("jwks-found", ({ sessionId, url, source, keyCount }) => {
+    attackStore.addDiscoveredEndpoint(sessionId, { url, source, keyCount });
+  });
+
   // ─── Register context menu commands ─────────────────────────────────────
   sdk.commands.register("jwt-attacker.attack", {
     name: "Attack JWT",

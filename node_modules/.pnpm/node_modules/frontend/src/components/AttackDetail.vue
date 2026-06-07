@@ -37,6 +37,12 @@
         </button>
       </section>
 
+      <!-- Decoded header -->
+      <section v-if="decodedHeader" class="px-4 py-3 border-b border-gray-700">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Decoded Header</p>
+        <pre class="bg-gray-900 rounded p-2 text-xs text-yellow-300 overflow-x-auto max-h-48 overflow-y-auto">{{ decodedHeader }}</pre>
+      </section>
+
       <!-- Decoded payload -->
       <section v-if="decodedPayload" class="px-4 py-3 border-b border-gray-700">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Decoded Payload</p>
@@ -80,6 +86,16 @@ const jwtParts = computed(() => {
   if (!props.result) return ["", "", ""];
   const parts = props.result.modifiedJWT.split(".");
   return [parts[0] ?? "", parts[1] ?? "", parts[2] ?? ""];
+});
+
+const decodedHeader = computed(() => {
+  if (!props.result) return null;
+  try {
+    const raw = b64urlDecode(jwtParts.value[0]);
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return null;
+  }
 });
 
 const decodedPayload = computed(() => {

@@ -87,25 +87,6 @@ function bigintToPublicKeyPem(n: bigint, e: bigint = 65537n): string {
   return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----\n`;
 }
 
-function encodeLength(len: number): Buffer {
-  if (len < 0x80) return Buffer.from([len]);
-  if (len < 0x100) return Buffer.from([0x81, len]);
-  return Buffer.from([0x82, (len >> 8) & 0xff, len & 0xff]);
-}
-
-function encodeSequence(data: Buffer): Buffer {
-  return Buffer.concat([Buffer.from([0x30]), encodeLength(data.length), data]);
-}
-
-function encodeInteger(data: Buffer): Buffer {
-  return Buffer.concat([Buffer.from([0x02]), encodeLength(data.length), data]);
-}
-
-function encodeBitString(data: Buffer): Buffer {
-  const inner = Buffer.concat([Buffer.from([0x00]), data]); // 0 unused bits
-  return Buffer.concat([Buffer.from([0x03]), encodeLength(inner.length), inner]);
-}
-
 const SMALL_PRIMES = [
   2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n, 41n, 43n, 47n,
   53n, 59n, 61n, 67n, 71n, 73n, 79n, 83n, 89n, 97n, 101n, 103n, 107n, 109n,
@@ -197,22 +178,19 @@ export async function recoverPublicKeyFromJWTs(
 
   const results: KeyRecoveryResult[] = [];
 
-  for (const [alg, group] of Object.entries(byAlg)) {
-    if (group.length < 2) continue;
-    onProgress?.(`Attempting key recovery for ${alg} with ${group.length} JWTs…`);
-
-    // Try pairs — first pair that works wins
-    for (let i = 0; i < Math.min(group.length - 1, 3); i++) {
-      for (let j = i + 1; j < Math.min(group.length, 4); j++) {
-        try {
-          const result = await recoverRSAPublicKey(group[i], group[j], onProgress);
-          results.push(result);
-          break; // One successful recovery per algorithm is enough
-        } catch (err) {
-          onProgress?.(`Pair ${i},${j} failed: ${(err as Error).message}`);
-        }
-      }
-      if (results.find((r) => r.modulusBits > 0)) break;
+  // Only the largest single-algorithm group is attempted, and only ONE pair from
+  // it. Each recoverRSAPublicKey call performs sig^65537 over the integers plus a
+  // GCD on ~16 MB numbers, which is very expensive in pure-JS BigInt — trying
+  // multiple pairs would multiply an already large cost.
+  const groups = Object.values(byAlg).filter((g) => g.length >= 2).sort((a, b) => b.length - a.length);
+  if (groups.length) {
+    const group = groups[0];
+    const alg = group[0].header.alg as string;
+    onProgress?.(`Attempting key recovery for ${alg} using 2 of ${group.length} JWTs…`);
+    try {
+      results.push(await recoverRSAPublicKey(group[0], group[1], onProgress));
+    } catch (err) {
+      onProgress?.(`Recovery failed: ${(err as Error).message}`);
     }
   }
 

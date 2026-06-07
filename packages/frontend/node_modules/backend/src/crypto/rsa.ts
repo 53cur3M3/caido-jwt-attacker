@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { b64urlDecode, b64urlEncode } from "./jwt.js";
 import type { JWK } from "../types.js";
 
@@ -7,9 +8,189 @@ export interface RSAKeyPair {
   publicJwk: JWK;
 }
 
-// RSA key generation requires Node.js crypto — not available in LLRT.
-export function generateRSAKeyPair(_bits: 2048 | 4096 = 2048): RSAKeyPair {
-  throw new Error("RSA key generation is not available in this runtime");
+// ─── Pure-JS RSA key generation (BigInt) ────────────────────────────────────
+// LLRT has no native key generation, so we build an RSA key pair from scratch
+// using BigInt arithmetic and Miller-Rabin primality testing. The resulting
+// key only needs to be a valid RSA key the *attacker* controls (we publish the
+// matching public key), so cryptographic strength of the RNG is not critical.
+
+const SMALL_PRIMES_GEN: bigint[] = (() => {
+  const out: bigint[] = [];
+  const limit = 2000;
+  const sieve = new Uint8Array(limit + 1);
+  for (let i = 2; i <= limit; i++) {
+    if (!sieve[i]) {
+      out.push(BigInt(i));
+      for (let j = i * i; j <= limit; j += i) sieve[j] = 1;
+    }
+  }
+  return out;
+})();
+
+function bytesToBigInt(buf: Buffer): bigint {
+  return buf.length ? BigInt("0x" + buf.toString("hex")) : 0n;
+}
+
+function modpowBig(base: bigint, exp: bigint, mod: bigint): bigint {
+  if (mod === 1n) return 0n;
+  let result = 1n;
+  base %= mod;
+  while (exp > 0n) {
+    if (exp & 1n) result = (result * base) % mod;
+    exp >>= 1n;
+    base = (base * base) % mod;
+  }
+  return result;
+}
+
+function gcdBig(a: bigint, b: bigint): bigint {
+  while (b) [a, b] = [b, a % b];
+  return a < 0n ? -a : a;
+}
+
+function egcd(a: bigint, b: bigint): [bigint, bigint, bigint] {
+  if (b === 0n) return [a, 1n, 0n];
+  const [g, x, y] = egcd(b, a % b);
+  return [g, y, x - (a / b) * y];
+}
+
+function modinv(a: bigint, m: bigint): bigint {
+  const [g, x] = egcd(((a % m) + m) % m, m);
+  if (g !== 1n) throw new Error("modular inverse does not exist");
+  return ((x % m) + m) % m;
+}
+
+function randomBigIntOfBits(bits: number): bigint {
+  const bytes = Math.ceil(bits / 8);
+  let n = bytesToBigInt(randomBytes(bytes));
+  const mask = (1n << BigInt(bits)) - 1n;
+  n &= mask;
+  // Force the top two bits so the product of two such primes has the full
+  // requested modulus size, and force odd.
+  n |= 1n << BigInt(bits - 1);
+  n |= 1n << BigInt(bits - 2);
+  n |= 1n;
+  return n;
+}
+
+function isProbablePrime(n: bigint, rounds = 16): boolean {
+  if (n < 2n) return false;
+  for (const p of SMALL_PRIMES_GEN) {
+    if (n === p) return true;
+    if (n % p === 0n) return false;
+  }
+  let d = n - 1n;
+  let r = 0n;
+  while ((d & 1n) === 0n) {
+    d >>= 1n;
+    r++;
+  }
+  const witnesses = [2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n];
+  for (let i = 0; i < rounds; i++) {
+    const a = witnesses[i % witnesses.length];
+    if (a >= n - 1n) continue;
+    let x = modpowBig(a, d, n);
+    if (x === 1n || x === n - 1n) continue;
+    let composite = true;
+    for (let j = 1n; j < r; j++) {
+      x = (x * x) % n;
+      if (x === n - 1n) {
+        composite = false;
+        break;
+      }
+    }
+    if (composite) return false;
+  }
+  return true;
+}
+
+function randomPrime(bits: number): bigint {
+  for (;;) {
+    let cand = randomBigIntOfBits(bits);
+    for (let k = 0; k < 4096; k++) {
+      if (isProbablePrime(cand)) return cand;
+      cand += 2n;
+    }
+  }
+}
+
+// Minimal big-endian bytes of an unsigned bigint (no sign padding).
+function unsignedBytes(n: bigint): Buffer {
+  let hex = n.toString(16);
+  if (hex.length % 2) hex = "0" + hex;
+  return Buffer.from(hex, "hex");
+}
+
+// DER INTEGER from an unsigned bigint (prepends 0x00 if the high bit is set).
+function encodeUIntBig(n: bigint): Buffer {
+  let buf = unsignedBytes(n);
+  if (buf.length === 0) buf = Buffer.from([0x00]);
+  if (buf[0] & 0x80) buf = Buffer.concat([Buffer.from([0x00]), buf]);
+  return encodeInteger(buf);
+}
+
+function buildPKCS8RSAPem(
+  n: bigint, e: bigint, d: bigint,
+  p: bigint, q: bigint, dp: bigint, dq: bigint, qi: bigint
+): string {
+  const rsaPrivateKey = encodeSequence(Buffer.concat([
+    encodeInteger(Buffer.from([0x00])), // version
+    encodeUIntBig(n),
+    encodeUIntBig(e),
+    encodeUIntBig(d),
+    encodeUIntBig(p),
+    encodeUIntBig(q),
+    encodeUIntBig(dp),
+    encodeUIntBig(dq),
+    encodeUIntBig(qi),
+  ]));
+
+  const algId = encodeSequence(Buffer.concat([
+    Buffer.from("06092a864886f70d010101", "hex"), // OID rsaEncryption
+    Buffer.from("0500", "hex"),                   // NULL
+  ]));
+
+  const pkcs8 = encodeSequence(Buffer.concat([
+    encodeInteger(Buffer.from([0x00])), // version
+    algId,
+    Buffer.concat([Buffer.from([0x04]), encodeLength(rsaPrivateKey.length), rsaPrivateKey]), // OCTET STRING
+  ]));
+
+  const b64 = pkcs8.toString("base64");
+  const lines = b64.match(/.{1,64}/g)!.join("\n");
+  return `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----\n`;
+}
+
+export function generateRSAKeyPair(bits: 2048 | 4096 = 2048): RSAKeyPair {
+  const e = 65537n;
+  let p: bigint, q: bigint, n: bigint, d: bigint;
+
+  for (;;) {
+    p = randomPrime(bits / 2);
+    q = randomPrime(bits / 2);
+    if (p === q) continue;
+    n = p * q;
+    if (n.toString(2).length !== bits) continue;
+    const phi = (p - 1n) * (q - 1n);
+    if (gcdBig(e, phi) !== 1n) continue;
+    d = modinv(e, phi);
+    break;
+  }
+
+  if (p < q) [p, q] = [q, p];
+  const dp = d % (p - 1n);
+  const dq = d % (q - 1n);
+  const qi = modinv(q, p);
+
+  const privateKeyPem = buildPKCS8RSAPem(n, e, d, p, q, dp, dq, qi);
+  const publicJwk: JWK = {
+    kty: "RSA",
+    n: b64urlEncode(unsignedBytes(n)),
+    e: b64urlEncode(unsignedBytes(e)),
+  };
+  const publicKeyPem = rsaJwkToSpkiPem(publicJwk);
+
+  return { publicKeyPem, privateKeyPem, publicJwk };
 }
 
 // ─── DER helpers ────────────────────────────────────────────────────────────

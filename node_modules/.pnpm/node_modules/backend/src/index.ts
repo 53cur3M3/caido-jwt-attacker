@@ -2,15 +2,17 @@ import { SDK, DefineAPI, DefineEvents } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 
 import { parseJWT, getAlgorithmFamily } from "./crypto/jwt.js";
+import { generateRSAKeyPair, type RSAKeyPair } from "./crypto/rsa.js";
+import { recoverPublicKeyFromJWTs } from "./crypto/keyRecovery.js";
 import { buildNoneAttacks } from "./attacks/none.js";
 import { buildNullSigAttacks } from "./attacks/nullSig.js";
-import { buildAlgConfusionAttacks } from "./attacks/algConfusion.js";
+import { buildAlgConfusionAttacks, buildAlgConfusionForKeys } from "./attacks/algConfusion.js";
 import { buildEmbeddedJWKAttacks } from "./attacks/embeddedJwk.js";
 import { buildJKUSpoofAttacks } from "./attacks/jkuSpoof.js";
 import { buildKIDInjectionAttacks } from "./attacks/kidInject.js";
 import { buildClaimTamperAttacks } from "./attacks/claimTamper.js";
 import { buildWeakSecretAttacks } from "./attacks/weakSecret.js";
-import { parseCookies, looksLikeJWT } from "./util.js";
+import { parseCookies, looksLikeJWT, nanoid } from "./util.js";
 import type {
   AttackResult,
   JwtLocation,
@@ -39,6 +41,7 @@ export type BackendEvents = DefineEvents<{
   "jwt-key-recovery-progress": (data: { sessionId: string; message: string }) => void;
   "jwt-key-recovery-complete": (data: { sessionId: string; keys: string[] }) => void;
   "jwks-payload": (data: { sessionId: string; jwksJson: string; privateKeyPem: string }) => void;
+  "jwks-found": (data: { sessionId: string; url: string; source: string; keyCount: number }) => void;
 }>;
 
 // ─── RPC API exposed to frontend ────────────────────────────────────────────
@@ -87,12 +90,6 @@ async function attackJwt(
       return;
     }
 
-    // ── Key recovery from HTTP history ─────────────────────────────────────
-    // Note: RSA key recovery via s^65537 is disabled — computing a 2048-bit
-    // BigInt raised to the 65537th power (no modular reduction) produces a
-    // ~16 MB integer that hangs LLRT's single-threaded event loop.
-    const recoveredKeys: string[] = [];
-
     // ── Build all attack variants ──────────────────────────────────────────
     // The config can arrive partially serialized over RPC (e.g. a Vue reactive
     // proxy losing its nested `enabledAttacks`), so normalize defensively —
@@ -105,6 +102,27 @@ async function attackJwt(
         .map(([k]) => k)
         .join(", ") || "(none)"}`
     );
+
+    // Generate one RSA key pair up front and reuse it for every JWK-injection
+    // attack (embedded JWK + JKU/X5U). LLRT has no native key generation, so
+    // this is a pure-BigInt operation — doing it once avoids repeating the cost.
+    let rsaKeyPair: RSAKeyPair | undefined;
+    const haveConfiguredKeyPair = !!(cfg.customPrivateKeyPem && cfg.customPublicKeyPem);
+    const needsKeyPair =
+      cfg.enabledAttacks.embeddedJwk ||
+      (!!cfg.jwksUrl && (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) && !haveConfiguredKeyPair);
+    if (needsKeyPair) {
+      try {
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: "Generating RSA key pair for JWK-injection attacks…",
+        });
+        rsaKeyPair = generateRSAKeyPair(2048);
+      } catch (e) {
+        errors.push(`[keygen] ${(e as Error).message}`);
+        sdk.console.log(`[JWT Attacker] RSA keygen failed: ${(e as Error).message}`);
+      }
+    }
 
     const attacks: AttackResult[] = [];
 
@@ -120,7 +138,7 @@ async function attackJwt(
 
     if (cfg.enabledAttacks.none) await tryMerge("none", () => buildNoneAttacks(parsed));
     if (cfg.enabledAttacks.nullSig) await tryMerge("nullSig", () => buildNullSigAttacks(parsed));
-    if (cfg.enabledAttacks.embeddedJwk) await tryMerge("embeddedJwk", () => buildEmbeddedJWKAttacks(parsed));
+    if (cfg.enabledAttacks.embeddedJwk) await tryMerge("embeddedJwk", () => buildEmbeddedJWKAttacks(parsed, rsaKeyPair));
     if (cfg.enabledAttacks.kidInject) await tryMerge("kidInject", () => buildKIDInjectionAttacks(parsed));
     if (cfg.enabledAttacks.claimTamper) await tryMerge("claimTamper", () => buildClaimTamperAttacks(parsed));
 
@@ -130,7 +148,7 @@ async function attackJwt(
 
     if (cfg.enabledAttacks.jkuSpoof || cfg.enabledAttacks.x5uSpoof) {
       try {
-        const { attacks: spoofAttacks, jwksContent, jwksKey } = buildJKUSpoofAttacks(parsed, cfg);
+        const { attacks: spoofAttacks, jwksContent, jwksKey } = buildJKUSpoofAttacks(parsed, cfg, rsaKeyPair);
         merge(spoofAttacks);
         if (jwksContent && jwksKey) {
           sdk.api.send("jwks-payload", { sessionId, jwksJson: jwksContent, privateKeyPem: jwksKey });
@@ -140,6 +158,21 @@ async function attackJwt(
       }
     }
 
+    // HTTP GET through Caido's own networking (handles self-signed certs,
+    // upstream proxy, scope, and appears in HTTP history) — used for JWKS /
+    // certificate discovery. The LLRT global `fetch` is unreliable for this and
+    // rejects invalid TLS certs commonly seen on test targets.
+    const httpGet = async (url: string): Promise<string> => {
+      const getSpec = new RequestSpec(url);
+      const sent = await sdk.requests.send(getSpec as unknown as Parameters<typeof sdk.requests.send>[0]);
+      const code = sent.response?.getCode();
+      if (!sent.response || code === undefined || code < 200 || code >= 300) {
+        throw new Error(`HTTP ${code ?? "no response"}`);
+      }
+      const body = sent.response.getBody();
+      return body ? bodyToText(body) : "";
+    };
+
     if (cfg.enabledAttacks.algConfusion) {
       await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
         parsed,
@@ -147,51 +180,95 @@ async function attackJwt(
         request.getPort(),
         request.getTls(),
         cfg,
-        recoveredKeys
+        [], // first wave: no recovered keys yet — recovery runs as a second wave below
+        // Surface every discovered key source so the analyst doesn't miss it.
+        (found) => sdk.api.send("jwks-found", { sessionId, ...found }),
+        httpGet
       ));
     }
 
     sdk.console.log(`[JWT Attacker] built ${attacks.length} attack variant(s)`);
 
-    if (attacks.length === 0) {
-      sdk.api.send("jwt-attack-complete", {
-        sessionId,
-        errors: errors.length
-          ? errors
-          : ["No attack variants were generated — check that at least one attack is enabled in Configuration."],
-      });
-      return;
-    }
+    // Baseline: the unmodified original request, sent first so the analyst has a
+    // reference response (status / length) to compare every attack against.
+    const baseline: AttackResult = {
+      id: nanoid(),
+      technique: "baseline",
+      techniqueName: "Original request (baseline)",
+      description: "The unmodified original request, sent first to establish a baseline response for comparison.",
+      modifiedJWT: originalJWT,
+      timestamp: Date.now(),
+    };
 
-    // Update the total now that we know how many attacks we have
-    sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length });
+    // ── Send helper (reused for the first wave and the recovery second wave) ──
+    const sendAttacks = async (list: AttackResult[]) => {
+      for (const attack of list) {
+        try {
+          const attackSpec = cloneSpecWithJWT(spec, loc, attack.modifiedJWT);
+          const start = Date.now();
+          const sent = await sdk.requests.send(attackSpec as unknown as Parameters<typeof sdk.requests.send>[0]);
+          attack.durationMs = Date.now() - start;
+          attack.requestId = sent.request?.getId();
 
-    // ── Send each attack request ───────────────────────────────────────────
-    for (const attack of attacks) {
+          if (sent.response) {
+            attack.responseStatus = sent.response.getCode();
+            const body = sent.response.getBody();
+            const bodyText = body ? await bodyToText(body) : "";
+            attack.responseLength = bodyText.length;
+            attack.responseBody = bodyText.slice(0, 4096); // truncate for UI
+            attack.responseHeaders = flattenHeaders(sent.response.getHeaders());
+          }
+        } catch (e) {
+          attack.error = (e as Error).message;
+          errors.push(`[${attack.techniqueName}] ${attack.error}`);
+        }
+        sdk.api.send("jwt-attack-result", { sessionId, result: attack });
+      }
+    };
+
+    // ── First wave (baseline first, then all attack variants) ────────────────
+    const firstWave = [baseline, ...attacks];
+    sdk.api.send("jwt-attack-started", { sessionId, requestId, total: firstWave.length });
+    await sendAttacks(firstWave);
+
+    // ── Second wave: RSA public-key recovery from same-host HTTP history ──────
+    // Requires 2+ distinct RS/PS JWTs from the same host. The recovery math
+    // (sig^65537 over the integers) is heavy and pure-JS BigInt lacks GMP-grade
+    // performance, so it is opt-in (cfg.enableKeyRecovery) and runs only after
+    // the main attacks have already been sent.
+    if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
       try {
-        const attackSpec = cloneSpecWithJWT(spec, loc, attack.modifiedJWT);
-        const start = Date.now();
-        const sent = await sdk.requests.send(attackSpec as unknown as Parameters<typeof sdk.requests.send>[0]);
-        const durationMs = Date.now() - start;
-
-        attack.requestId = sent.request?.getId();
-        attack.durationMs = durationMs;
-
-        if (sent.response) {
-          attack.responseStatus = sent.response.getCode();
-          const body = sent.response.getBody();
-          const bodyText = body ? await bodyToText(body) : "";
-          attack.responseLength = bodyText.length;
-          attack.responseBody = bodyText.slice(0, 4096); // truncate for UI
-          const headers = sent.response.getHeaders();
-          attack.responseHeaders = flattenHeaders(headers);
+        const host = request.getHost();
+        const historyJWTs = await collectHistoryJWTs(sdk, host, 25);
+        if (historyJWTs.length >= 2) {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: `Found ${historyJWTs.length} distinct RSA JWT(s) from ${host} — attempting public-key recovery (this can take a while)…`,
+          });
+          const keyResults = await recoverPublicKeyFromJWTs(
+            historyJWTs,
+            (msg) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: msg })
+          );
+          const recoveredKeys = keyResults.map((r) => r.publicKeyPem);
+          if (recoveredKeys.length) {
+            sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: recoveredKeys });
+            const extra = buildAlgConfusionForKeys(parsed, recoveredKeys, "recovered from HTTP history");
+            if (extra.length) {
+              attacks.push(...extra);
+              // +1 accounts for the baseline request already sent.
+              sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 1 });
+              await sendAttacks(extra);
+            }
+          }
         }
       } catch (e) {
-        attack.error = (e as Error).message;
-        errors.push(`[${attack.techniqueName}] ${attack.error}`);
+        errors.push(`[keyRecovery] ${(e as Error).message}`);
+        sdk.console.log(`[JWT Attacker] key recovery failed: ${(e as Error).message}`);
       }
+    }
 
-      sdk.api.send("jwt-attack-result", { sessionId, result: attack });
+    if (attacks.length === 0) {
+      errors.push("No attack variants were generated — check that at least one attack is enabled in Configuration.");
     }
 
     sdk.api.send("jwt-attack-complete", { sessionId, errors });
@@ -240,6 +317,7 @@ function normalizeConfig(raw: unknown): PluginConfig {
     customCertPem: typeof c.customCertPem === "string" ? c.customCertPem : "",
     extraJwksPaths: Array.isArray(c.extraJwksPaths) ? c.extraJwksPaths : [],
     customWordlist: Array.isArray(c.customWordlist) ? c.customWordlist : [],
+    enableKeyRecovery: c.enableKeyRecovery === true,
     enabledAttacks,
   };
 }
@@ -357,6 +435,7 @@ async function collectHistoryJWTs(
   limit: number
 ): Promise<ParsedJWT[]> {
   const results: ParsedJWT[] = [];
+  const seen = new Set<string>();
   try {
     const page = await sdk.requests
       .query()
@@ -372,10 +451,14 @@ async function collectHistoryJWTs(
       const spec = item.request.toSpec() as unknown as IRequestSpec;
       const locs = findJWTsInSpec(spec);
       for (const loc of locs) {
+        // De-duplicate: recovery needs JWTs with *distinct* signatures sharing
+        // the same key. The same token reused across requests is useless.
+        if (seen.has(loc.jwt)) continue;
+        seen.add(loc.jwt);
         try {
           const parsed = parseJWT(loc.jwt);
           const fam = getAlgorithmFamily(parsed.header.alg as string);
-          if (fam === "RS" || fam === "PS") {
+          if ((fam === "RS" || fam === "PS") && parsed.signatureB64) {
             results.push(parsed);
             if (results.length >= 10) return results;
           }
