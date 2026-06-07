@@ -21,6 +21,11 @@ export interface AttackResult {
   // For HMAC-based attacks (kid injection, weak secret): the plaintext HMAC
   // secret used to sign — needed for jwt_tool reproduction commands.
   hmacSecret?: string;
+  // Informational results (e.g. weak-secret "not found") that should be shown
+  // but NOT sent as an HTTP request.
+  infoOnly?: boolean;
+  // Weak-secret crack: how many unique secrets were tested.
+  secretsTested?: number;
 }
 
 export interface DiscoveredEndpoint {

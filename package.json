@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "caido-dev build",
-    "watch": "caido-dev watch",
+    "gen-wordlist": "node packages/backend/scripts/gen-wordlist.mjs",
+    "build": "node packages/backend/scripts/gen-wordlist.mjs && caido-dev build",
+    "watch": "node packages/backend/scripts/gen-wordlist.mjs && caido-dev watch",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
