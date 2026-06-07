@@ -51,7 +51,9 @@ export interface PluginConfig {
   customPublicKeyPem: string;
   customPrivateKeyPem: string;
   customCertPem: string;
-  extraJwksPaths: string[];
+  // JWKS discovery paths probed on the target host (configurable; defaults to
+  // COMMON_JWKS_PATHS).
+  jwksPaths: string[];
   customWordlist: string[];
   enabledAttacks: Record<string, boolean>;
   // Opt-in: RSA public-key recovery from 2+ history JWTs. Off by default because
@@ -59,12 +61,45 @@ export interface PluginConfig {
   enableKeyRecovery: boolean;
 }
 
+// Default JWKS discovery paths — kept in sync with the backend's COMMON_JWKS_PATHS.
+// Used to seed the config field and to power the "Reset to defaults" button.
+export const COMMON_JWKS_PATHS = [
+  "/.well-known/jwks.json",
+  "/.well-known/openid-configuration",
+  "/oauth/jwks",
+  "/oauth2/jwks",
+  "/oauth2/v1/keys",
+  "/oauth2/v3/certs",
+  "/v1/keys",
+  "/v2/keys",
+  "/.well-known/keys",
+  "/auth/keys",
+  "/auth/realms/master/protocol/openid-connect/certs",
+  "/realms/master/protocol/openid-connect/certs",
+  "/jwks",
+  "/jwks.json",
+  "/api/auth/jwks",
+  "/api/jwks",
+  "/api/v1/jwks",
+  "/api/v2/jwks",
+  "/.well-known/pki-validation/jwks.json",
+  "/common/discovery/keys",
+  "/discovery/v2.0/keys",
+  "/oauth2/default/v1/keys",
+  "/api/auth/keys",
+  "/oauth/v2/keys",
+  "/auth/jwks",
+  "/.well-known/jwt-keys",
+  "/api/v1/jwks.json",
+  "/connect/jwks_uri",
+];
+
 export const DEFAULT_CONFIG: PluginConfig = {
   jwksUrl: "",
   customPublicKeyPem: "",
   customPrivateKeyPem: "",
   customCertPem: "",
-  extraJwksPaths: [],
+  jwksPaths: [...COMMON_JWKS_PATHS],
   customWordlist: [],
   enableKeyRecovery: false,
   enabledAttacks: {

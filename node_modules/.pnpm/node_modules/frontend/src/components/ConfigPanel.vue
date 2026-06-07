@@ -48,15 +48,25 @@
     </section>
 
     <section>
-      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Additional JWKS Paths</h2>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">JWKS Discovery Paths</h2>
+        <button
+          @click="resetJwksPaths"
+          class="text-xs text-gray-400 hover:text-blue-400 transition-colors"
+          title="Restore the built-in default JWKS path list"
+        >↺ Reset to defaults</button>
+      </div>
       <textarea
-        :value="cfg.extraJwksPaths.join('\n')"
-        @input="cfg.extraJwksPaths = ($event.target as HTMLTextAreaElement).value.split('\n').map(s => s.trim()).filter(Boolean)"
-        rows="4"
-        placeholder="/custom/.well-known/jwks.json&#10;/api/v2/auth/keys"
-        class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-gray-200 text-xs font-mono focus:outline-none focus:border-blue-500 resize-none"
+        :value="cfg.jwksPaths.join('\n')"
+        @input="cfg.jwksPaths = ($event.target as HTMLTextAreaElement).value.split('\n').map(s => s.trim()).filter(Boolean)"
+        rows="10"
+        placeholder="/.well-known/jwks.json&#10;/jwks.json"
+        class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-gray-200 text-xs font-mono focus:outline-none focus:border-blue-500 resize-y"
       />
-      <p class="text-xs text-gray-500 mt-1">One path per line. Probed in addition to the built-in list of 15 common paths.</p>
+      <p class="text-xs text-gray-500 mt-1">
+        One path per line. These are the exact paths probed on the target host for a JWKS.
+        Edit freely — use Reset to restore the built-in defaults ({{ DEFAULT_CONFIG.jwksPaths.length }} paths).
+      </p>
     </section>
 
     <section>
@@ -124,13 +134,17 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from "vue";
 import { useConfigStore } from "../stores/config.js";
-import { ATTACK_LABELS } from "../types.js";
+import { ATTACK_LABELS, DEFAULT_CONFIG } from "../types.js";
 
 const store = useConfigStore();
 const cfg = reactive({ ...store.config });
 const saved = ref(false);
 
 watch(() => store.config, (v) => Object.assign(cfg, v), { deep: true });
+
+function resetJwksPaths() {
+  cfg.jwksPaths = [...DEFAULT_CONFIG.jwksPaths];
+}
 
 async function save() {
   store.update({ ...cfg });

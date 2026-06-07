@@ -784,6 +784,26 @@ var COMMON_JWKS_PATHS = [
   "/api/v1/jwks.json",
   "/connect/jwks_uri"
 ];
+var DEFAULT_CONFIG = {
+  jwksUrl: "",
+  customPublicKeyPem: "",
+  customPrivateKeyPem: "",
+  customCertPem: "",
+  jwksPaths: [...COMMON_JWKS_PATHS],
+  customWordlist: [],
+  enableKeyRecovery: false,
+  enabledAttacks: {
+    none: true,
+    nullSig: true,
+    algConfusion: true,
+    embeddedJwk: true,
+    jkuSpoof: true,
+    x5uSpoof: true,
+    kidInject: true,
+    claimTamper: true,
+    weakSecret: true
+  }
+};
 
 // packages/backend/src/crypto/certFetch.ts
 async function fetchTLSCertPem(_host, _port = 443) {
@@ -911,7 +931,7 @@ async function tryJwks(fetcher, url) {
   }
   return null;
 }
-async function discoverJWKS(fetcher, baseUrl, extraPaths = []) {
+async function discoverJWKS(fetcher, baseUrl, paths = []) {
   let origin;
   try {
     const parsed = new URL(baseUrl);
@@ -919,7 +939,7 @@ async function discoverJWKS(fetcher, baseUrl, extraPaths = []) {
   } catch {
     return [];
   }
-  const pathsToTry = [...COMMON_JWKS_PATHS, ...extraPaths];
+  const pathsToTry = paths.length ? paths : [...COMMON_JWKS_PATHS];
   const results = [];
   const seenUrls = /* @__PURE__ */ new Set();
   try {
@@ -1082,7 +1102,7 @@ ${certDer.toString("base64").match(/.{1,64}/g).join("\n")}
   const baseUrl = `${proto}://${requestHost}${port}`;
   if (fetcher) {
     try {
-      const discovered = await discoverJWKS(fetcher, baseUrl, config.extraJwksPaths);
+      const discovered = await discoverJWKS(fetcher, baseUrl, config.jwksPaths);
       for (const result of discovered) {
         const pems = jwksToPublicKeys({ keys: result.keys });
         for (const pem of pems) {
@@ -1859,7 +1879,7 @@ function normalizeConfig(raw) {
     customPublicKeyPem: typeof c.customPublicKeyPem === "string" ? c.customPublicKeyPem : "",
     customPrivateKeyPem: typeof c.customPrivateKeyPem === "string" ? c.customPrivateKeyPem : "",
     customCertPem: typeof c.customCertPem === "string" ? c.customCertPem : "",
-    extraJwksPaths: Array.isArray(c.extraJwksPaths) ? c.extraJwksPaths : [],
+    jwksPaths: Array.isArray(c.jwksPaths) && c.jwksPaths.length ? c.jwksPaths : [...COMMON_JWKS_PATHS],
     customWordlist: Array.isArray(c.customWordlist) ? c.customWordlist : [],
     enableKeyRecovery: c.enableKeyRecovery === true,
     enabledAttacks

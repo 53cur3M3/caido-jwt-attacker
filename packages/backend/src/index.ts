@@ -13,6 +13,7 @@ import { buildKIDInjectionAttacks } from "./attacks/kidInject.js";
 import { buildClaimTamperAttacks } from "./attacks/claimTamper.js";
 import { buildWeakSecretAttacks } from "./attacks/weakSecret.js";
 import { parseCookies, looksLikeJWT, nanoid } from "./util.js";
+import { COMMON_JWKS_PATHS } from "./types.js";
 import type {
   AttackResult,
   JwtLocation,
@@ -321,7 +322,7 @@ function normalizeConfig(raw: unknown): PluginConfig {
     customPublicKeyPem: typeof c.customPublicKeyPem === "string" ? c.customPublicKeyPem : "",
     customPrivateKeyPem: typeof c.customPrivateKeyPem === "string" ? c.customPrivateKeyPem : "",
     customCertPem: typeof c.customCertPem === "string" ? c.customCertPem : "",
-    extraJwksPaths: Array.isArray(c.extraJwksPaths) ? c.extraJwksPaths : [],
+    jwksPaths: Array.isArray(c.jwksPaths) && c.jwksPaths.length ? c.jwksPaths : [...COMMON_JWKS_PATHS],
     customWordlist: Array.isArray(c.customWordlist) ? c.customWordlist : [],
     enableKeyRecovery: c.enableKeyRecovery === true,
     enabledAttacks,

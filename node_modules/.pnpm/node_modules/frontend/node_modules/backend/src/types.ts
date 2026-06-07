@@ -76,34 +76,15 @@ export interface PluginConfig {
   customPublicKeyPem: string;
   customPrivateKeyPem: string;
   customCertPem: string;
-  extraJwksPaths: string[];
+  // JWKS discovery paths probed on the target host (configurable; defaults to
+  // COMMON_JWKS_PATHS).
+  jwksPaths: string[];
   customWordlist: string[];
   enabledAttacks: Record<string, boolean>;
   // Opt-in: RSA public-key recovery from 2+ history JWTs. Off by default because
   // the integer arithmetic (sig^65537) is extremely slow in a pure-JS runtime.
   enableKeyRecovery: boolean;
 }
-
-export const DEFAULT_CONFIG: PluginConfig = {
-  jwksUrl: "",
-  customPublicKeyPem: "",
-  customPrivateKeyPem: "",
-  customCertPem: "",
-  extraJwksPaths: [],
-  customWordlist: [],
-  enableKeyRecovery: false,
-  enabledAttacks: {
-    none: true,
-    nullSig: true,
-    algConfusion: true,
-    embeddedJwk: true,
-    jkuSpoof: true,
-    x5uSpoof: true,
-    kidInject: true,
-    claimTamper: true,
-    weakSecret: true,
-  },
-};
 
 export const COMMON_JWKS_PATHS = [
   "/.well-known/jwks.json",
@@ -136,3 +117,24 @@ export const COMMON_JWKS_PATHS = [
   "/api/v1/jwks.json",
   "/connect/jwks_uri",
 ];
+
+export const DEFAULT_CONFIG: PluginConfig = {
+  jwksUrl: "",
+  customPublicKeyPem: "",
+  customPrivateKeyPem: "",
+  customCertPem: "",
+  jwksPaths: [...COMMON_JWKS_PATHS],
+  customWordlist: [],
+  enableKeyRecovery: false,
+  enabledAttacks: {
+    none: true,
+    nullSig: true,
+    algConfusion: true,
+    embeddedJwk: true,
+    jkuSpoof: true,
+    x5uSpoof: true,
+    kidInject: true,
+    claimTamper: true,
+    weakSecret: true,
+  },
+};

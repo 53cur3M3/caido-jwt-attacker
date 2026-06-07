@@ -147,7 +147,7 @@ async function tryJwks(fetcher: UrlFetcher, url: string): Promise<JWKSDiscoveryR
 export async function discoverJWKS(
   fetcher: UrlFetcher,
   baseUrl: string,
-  extraPaths: string[] = []
+  paths: string[] = []
 ): Promise<JWKSDiscoveryResult[]> {
   let origin: string;
   try {
@@ -157,7 +157,9 @@ export async function discoverJWKS(
     return [];
   }
 
-  const pathsToTry = [...COMMON_JWKS_PATHS, ...extraPaths];
+  // The caller supplies the configurable discovery path list; fall back to the
+  // built-in defaults only if it is empty.
+  const pathsToTry = paths.length ? paths : [...COMMON_JWKS_PATHS];
   const results: JWKSDiscoveryResult[] = [];
   const seenUrls = new Set<string>();
 

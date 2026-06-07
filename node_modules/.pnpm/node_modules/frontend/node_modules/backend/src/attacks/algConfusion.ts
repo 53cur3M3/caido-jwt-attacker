@@ -226,7 +226,7 @@ export async function buildAlgConfusionAttacks(
 
   if (fetcher) {
     try {
-      const discovered = await discoverJWKS(fetcher, baseUrl, config.extraJwksPaths);
+      const discovered = await discoverJWKS(fetcher, baseUrl, config.jwksPaths);
       for (const result of discovered) {
         const pems = jwksToPublicKeys({ keys: result.keys });
         for (const pem of pems) {
