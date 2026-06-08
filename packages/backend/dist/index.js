@@ -1839,11 +1839,10 @@ ${repro}
     };
     await runBypassFindings(attacks);
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
-      const host = request.getHost();
       const historyJWTs = recoveryCandidates;
       sdk.api.send("jwt-key-recovery-progress", {
         sessionId,
-        message: `Key recovery: found ${historyJWTs.length} distinct RS/PS JWT(s) for ${host}.`
+        message: `Key recovery: found ${historyJWTs.length} distinct RS/PS JWT(s) in HTTP history.`
       });
       if (historyJWTs.length < 2) {
         sdk.api.send("jwt-key-recovery-progress", {

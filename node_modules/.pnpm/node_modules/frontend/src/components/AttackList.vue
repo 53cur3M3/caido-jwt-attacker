@@ -70,7 +70,7 @@
         <span v-if="session.recovery?.keys.length">— ✓ {{ session.recovery.keys.length }} key(s) recovered</span>
         · click for details &amp; jwt_tool repro
       </p>
-      <p v-for="(msg, i) in session.keyRecoveryLog" :key="i" class="break-all leading-snug">{{ msg }}</p>
+      <p v-for="(msg, i) in bannerLog" :key="i" class="break-all leading-snug">{{ msg }}</p>
     </div>
 
     <!-- JKU/X5U spoofing: endpoint check + JWKS to host (click → right pane) -->
@@ -147,6 +147,31 @@ const store = useAttackStore();
 const activeFilter = ref("all");
 
 const session = computed(() => store.activeSession);
+
+// Condensed log for the left banner — drops the verbose per-e / per-candidate /
+// per-pair / [scan] lines (those stay in the full log shown in the right pane).
+const bannerLog = computed(() => {
+  const log = session.value?.keyRecoveryLog ?? [];
+  return log
+    .filter((m) =>
+      !m.startsWith("e=") &&
+      !m.startsWith("[scan]") &&
+      !m.startsWith("candidate ") &&
+      !m.startsWith("Recovering ") &&
+      !m.startsWith("Skipping pair")
+    )
+    // Condense the algorithm-confusion lines (drop hostname / parenthetical);
+    // the right pane keeps the full text.
+    .map((m) => {
+      if (m.startsWith("Algorithm confusion: probing ")) {
+        return "Algorithm confusion: probing for exposed JWKS & certificate key endpoints…";
+      }
+      if (m.startsWith("Algorithm confusion: no exposed JWKS/cert endpoints found")) {
+        return "Algorithm confusion: no exposed JWKS/cert endpoints found.";
+      }
+      return m;
+    });
+});
 
 const spoofBanner = computed(() => {
   const sp = session.value?.spoof;

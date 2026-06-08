@@ -14,7 +14,7 @@ const re = {}, Jt = [], Qe = () => {
 (e.charCodeAt(2) > 122 || e.charCodeAt(2) < 97), Mn = (e) => e.startsWith("onUpdate:"), Se = Object.assign, Wn = (e, t) => {
   const r = e.indexOf(t);
   r > -1 && e.splice(r, 1);
-}, Fi = Object.prototype.hasOwnProperty, _ = (e, t) => Fi.call(e, t), X = Array.isArray, Ht = (e) => kr(e) === "[object Map]", Yr = (e) => kr(e) === "[object Set]", ls = (e) => kr(e) === "[object Date]", Z = (e) => typeof e == "function", de = (e) => typeof e == "string", _e = (e) => typeof e == "symbol", ae = (e) => e !== null && typeof e == "object", lo = (e) => (ae(e) || Z(e)) && Z(e.then) && Z(e.catch), co = Object.prototype.toString, kr = (e) => co.call(e), Mi = (e) => kr(e).slice(8, -1), uo = (e) => kr(e) === "[object Object]", Jn = (e) => de(e) && e !== "NaN" && e[0] !== "-" && "" + parseInt(e, 10) === e, rr = /* @__PURE__ */ Fn(
+}, Fi = Object.prototype.hasOwnProperty, _ = (e, t) => Fi.call(e, t), X = Array.isArray, Ht = (e) => kr(e) === "[object Map]", Yr = (e) => kr(e) === "[object Set]", ls = (e) => kr(e) === "[object Date]", Z = (e) => typeof e == "function", fe = (e) => typeof e == "string", _e = (e) => typeof e == "symbol", ae = (e) => e !== null && typeof e == "object", lo = (e) => (ae(e) || Z(e)) && Z(e.then) && Z(e.catch), co = Object.prototype.toString, kr = (e) => co.call(e), Mi = (e) => kr(e).slice(8, -1), uo = (e) => kr(e) === "[object Object]", Jn = (e) => fe(e) && e !== "NaN" && e[0] !== "-" && "" + parseInt(e, 10) === e, rr = /* @__PURE__ */ Fn(
   // the leading comma is intentional so empty string "" is also included
   ",key,ref,ref_for,ref_key,onVnodeBeforeMount,onVnodeMounted,onVnodeBeforeUpdate,onVnodeUpdated,onVnodeBeforeUnmount,onVnodeUnmounted"
 ), Ar = (e) => {
@@ -46,13 +46,13 @@ function _r(e) {
   if (X(e)) {
     const t = {};
     for (let r = 0; r < e.length; r++) {
-      const n = e[r], s = de(n) ? Ui(n) : _r(n);
+      const n = e[r], s = fe(n) ? Ui(n) : _r(n);
       if (s)
         for (const o in s)
           t[o] = s[o];
     }
     return t;
-  } else if (de(e) || ae(e))
+  } else if (fe(e) || ae(e))
     return e;
 }
 const Hi = /;(?![^(]*\))/g, Xi = /:([^]+)/, Ki = /\/\*[^]*?\*\//g;
@@ -67,7 +67,7 @@ function Ui(e) {
 }
 function he(e) {
   let t = "";
-  if (de(e))
+  if (fe(e))
     t = e;
   else if (X(e))
     for (let r = 0; r < e.length; r++) {
@@ -116,7 +116,7 @@ function $r(e, t) {
 function bo(e, t) {
   return e.findIndex((r) => $r(r, t));
 }
-const ho = (e) => !!(e && e.__v_isRef === !0), S = (e) => de(e) ? e : e == null ? "" : X(e) || ae(e) && (e.toString === co || !Z(e.toString)) ? ho(e) ? S(e.value) : JSON.stringify(e, go, 2) : String(e), go = (e, t) => ho(t) ? go(e, t.value) : Ht(t) ? {
+const ho = (e) => !!(e && e.__v_isRef === !0), R = (e) => fe(e) ? e : e == null ? "" : X(e) || ae(e) && (e.toString === co || !Z(e.toString)) ? ho(e) ? R(e.value) : JSON.stringify(e, go, 2) : String(e), go = (e, t) => ho(t) ? go(e, t.value) : Ht(t) ? {
   [`Map(${t.size})`]: [...t.entries()].reduce(
     (r, [n, s], o) => (r[cn(n, o) + " =>"] = s, r),
     {}
@@ -458,8 +458,8 @@ function st(e, t, r, n, s, o) {
     const l = X(e), u = l && Jn(r);
     if (l && r === "length") {
       const c = Number(n);
-      i.forEach((d, g) => {
-        (g === "length" || g === mr || !_e(g) && g >= c) && a(d);
+      i.forEach((d, b) => {
+        (b === "length" || b === mr || !_e(b) && b >= c) && a(d);
       });
     } else
       switch ((r !== void 0 || i.has(void 0)) && a(i.get(r)), u && a(i.get(mr)), t) {
@@ -591,10 +591,10 @@ function et(e, t, r, n, s, o) {
     return a ? ge(d) : d;
   }
   let u = r;
-  i !== e && (a ? u = function(d, g) {
-    return r.call(this, ge(d), g, e);
-  } : r.length > 2 && (u = function(d, g) {
-    return r.call(this, d, g, e);
+  i !== e && (a ? u = function(d, b) {
+    return r.call(this, ge(d), b, e);
+  } : r.length > 2 && (u = function(d, b) {
+    return r.call(this, d, b, e);
   }));
   const c = l.call(i, u, n);
   return a && s ? s(c) : c;
@@ -729,10 +729,10 @@ function ia(e, t, r) {
     ), {
       // iterator protocol
       next() {
-        const { value: d, done: g } = u.next();
-        return g ? { value: d, done: g } : {
+        const { value: d, done: b } = u.next();
+        return b ? { value: d, done: b } : {
           value: a ? [c(d[0]), c(d[1])] : c(d),
-          done: g
+          done: b
         };
       },
       // iterable protocol
@@ -1007,8 +1007,8 @@ function za(e, t = !1, r = St) {
 }
 function Sa(e, t, r = re) {
   const { immediate: n, deep: s, once: o, scheduler: i, augmentJob: a, call: l } = r, u = (q) => s ? q : We(q) || s === !1 || s === 0 ? ot(q, 1) : ot(q);
-  let c, d, g, v, k = !1, h = !1;
-  if (ue(e) ? (d = () => e.value, k = We(e)) : ht(e) ? (d = () => u(e), k = !0) : X(e) ? (h = !0, k = e.some((q) => ht(q) || We(q)), d = () => e.map((q) => {
+  let c, d, b, x, k = !1, v = !1;
+  if (ue(e) ? (d = () => e.value, k = We(e)) : ht(e) ? (d = () => u(e), k = !0) : X(e) ? (v = !0, k = e.some((q) => ht(q) || We(q)), d = () => e.map((q) => {
     if (ue(q))
       return q.value;
     if (ht(q))
@@ -1016,10 +1016,10 @@ function Sa(e, t, r = re) {
     if (Z(q))
       return l ? l(q, 2) : q();
   })) : Z(e) ? t ? d = l ? () => l(e, 2) : e : d = () => {
-    if (g) {
+    if (b) {
       at();
       try {
-        g();
+        b();
       } finally {
         lt();
       }
@@ -1027,7 +1027,7 @@ function Sa(e, t, r = re) {
     const q = St;
     St = c;
     try {
-      return l ? l(e, 3, [v]) : e(v);
+      return l ? l(e, 3, [x]) : e(x);
     } finally {
       St = q;
     }
@@ -1035,32 +1035,32 @@ function Sa(e, t, r = re) {
     const q = d, W = s === !0 ? 1 / 0 : s;
     d = () => ot(q(), W);
   }
-  const V = yo(), p = () => {
-    c.stop(), V && V.active && Wn(V.effects, c);
+  const S = yo(), g = () => {
+    c.stop(), S && S.active && Wn(S.effects, c);
   };
   if (o && t) {
     const q = t;
     t = (...W) => {
-      q(...W), p();
+      q(...W), g();
     };
   }
-  let x = h ? new Array(e.length).fill(Vr) : Vr;
-  const E = (q) => {
+  let h = v ? new Array(e.length).fill(Vr) : Vr;
+  const N = (q) => {
     if (!(!(c.flags & 1) || !c.dirty && !q))
       if (t) {
         const W = c.run();
-        if (s || k || (h ? W.some((A, Y) => bt(A, x[Y])) : bt(W, x))) {
-          g && g();
+        if (s || k || (v ? W.some((A, Y) => bt(A, h[Y])) : bt(W, h))) {
+          b && b();
           const A = St;
           St = c;
           try {
             const Y = [
               W,
               // pass undefined as the old value when it's changed for the first time
-              x === Vr ? void 0 : h && x[0] === Vr ? [] : x,
-              v
+              h === Vr ? void 0 : v && h[0] === Vr ? [] : h,
+              x
             ];
-            x = W, l ? l(t, 3, Y) : (
+            h = W, l ? l(t, 3, Y) : (
               // @ts-expect-error
               t(...Y)
             );
@@ -1071,7 +1071,7 @@ function Sa(e, t, r = re) {
       } else
         c.run();
   };
-  return a && a(E), c = new ko(d), c.scheduler = i ? () => i(E, !1) : E, v = (q) => za(q, !1, c), g = c.onStop = () => {
+  return a && a(N), c = new ko(d), c.scheduler = i ? () => i(N, !1) : N, x = (q) => za(q, !1, c), b = c.onStop = () => {
     const q = Mr.get(c);
     if (q) {
       if (l)
@@ -1080,7 +1080,7 @@ function Sa(e, t, r = re) {
         for (const W of q) W();
       Mr.delete(c);
     }
-  }, t ? n ? E(!0) : x = c.run() : i ? i(E.bind(null, !0), !0) : c.run(), p.pause = c.pause.bind(c), p.resume = c.resume.bind(c), p.stop = p, p;
+  }, t ? n ? N(!0) : h = c.run() : i ? i(N.bind(null, !0), !0) : c.run(), g.pause = c.pause.bind(c), g.resume = c.resume.bind(c), g.stop = g, g;
 }
 function ot(e, t = 1 / 0, r) {
   if (t <= 0 || !ae(e) || e.__v_skip || (r = r || /* @__PURE__ */ new Map(), (r.get(e) || 0) >= t))
@@ -1308,9 +1308,9 @@ const Hr = /* @__PURE__ */ new WeakMap();
 function or(e, t, r, n, s = !1) {
   if (X(e)) {
     e.forEach(
-      (k, h) => or(
+      (k, v) => or(
         k,
-        t && (X(t) ? t[h] : t),
+        t && (X(t) ? t[v] : t),
         r,
         n,
         s
@@ -1322,10 +1322,10 @@ function or(e, t, r, n, s = !1) {
     n.shapeFlag & 512 && n.type.__asyncResolved && n.component.subTree.component && or(e, t, r, n.component.subTree);
     return;
   }
-  const o = n.shapeFlag & 4 ? on(n.component) : n.el, i = s ? null : o, { i: a, r: l } = e, u = t && t.r, c = a.refs === re ? a.refs = {} : a.refs, d = a.setupState, g = D(d), v = d === re ? ao : (k) => _(g, k);
+  const o = n.shapeFlag & 4 ? on(n.component) : n.el, i = s ? null : o, { i: a, r: l } = e, u = t && t.r, c = a.refs === re ? a.refs = {} : a.refs, d = a.setupState, b = D(d), x = d === re ? ao : (k) => _(b, k);
   if (u != null && u !== l) {
-    if (ps(t), de(u))
-      c[u] = null, v(u) && (d[u] = null);
+    if (ps(t), fe(u))
+      c[u] = null, x(u) && (d[u] = null);
     else if (ue(u)) {
       u.value = null;
       const k = t;
@@ -1335,30 +1335,30 @@ function or(e, t, r, n, s = !1) {
   if (Z(l))
     wr(l, a, 12, [i, c]);
   else {
-    const k = de(l), h = ue(l);
-    if (k || h) {
-      const V = () => {
+    const k = fe(l), v = ue(l);
+    if (k || v) {
+      const S = () => {
         if (e.f) {
-          const p = k ? v(l) ? d[l] : c[l] : l.value;
+          const g = k ? x(l) ? d[l] : c[l] : l.value;
           if (s)
-            X(p) && Wn(p, o);
-          else if (X(p))
-            p.includes(o) || p.push(o);
+            X(g) && Wn(g, o);
+          else if (X(g))
+            g.includes(o) || g.push(o);
           else if (k)
-            c[l] = [o], v(l) && (d[l] = c[l]);
+            c[l] = [o], x(l) && (d[l] = c[l]);
           else {
-            const x = [o];
-            l.value = x, e.k && (c[e.k] = x);
+            const h = [o];
+            l.value = h, e.k && (c[e.k] = h);
           }
-        } else k ? (c[l] = i, v(l) && (d[l] = i)) : h && (l.value = i, e.k && (c[e.k] = i));
+        } else k ? (c[l] = i, x(l) && (d[l] = i)) : v && (l.value = i, e.k && (c[e.k] = i));
       };
       if (i) {
-        const p = () => {
-          V(), Hr.delete(e);
+        const g = () => {
+          S(), Hr.delete(e);
         };
-        p.id = -1, Hr.set(e, p), Oe(p, r);
+        g.id = -1, Hr.set(e, g), Oe(g, r);
       } else
-        ps(e), V();
+        ps(e), S();
     }
   }
 }
@@ -1429,7 +1429,7 @@ const Ka = Symbol.for("v-ndc");
 function Ee(e, t, r, n) {
   let s;
   const o = r, i = X(e);
-  if (i || de(e)) {
+  if (i || fe(e)) {
     const a = i && ht(e);
     let l = !1, u = !1;
     a && (l = !We(e), u = vt(e), e = en(e)), s = new Array(e.length);
@@ -1491,9 +1491,9 @@ const Tn = (e) => e ? fi(e) ? on(e) : Tn(e.parent) : null, ar = (
     const { ctx: r, setupState: n, data: s, props: o, accessCache: i, type: a, appContext: l } = e;
     let u;
     if (t[0] !== "$") {
-      const v = i[t];
-      if (v !== void 0)
-        switch (v) {
+      const x = i[t];
+      if (x !== void 0)
+        switch (x) {
           case 1:
             return n[t];
           case 2:
@@ -1520,7 +1520,7 @@ const Tn = (e) => e ? fi(e) ? on(e) : Tn(e.parent) : null, ar = (
       }
     }
     const c = ar[t];
-    let d, g;
+    let d, b;
     if (c)
       return t === "$attrs" && ze(e.attrs, "get", ""), c(e);
     if (
@@ -1532,9 +1532,9 @@ const Tn = (e) => e ? fi(e) ? on(e) : Tn(e.parent) : null, ar = (
       return i[t] = 4, r[t];
     if (
       // global properties
-      g = l.config.globalProperties, _(g, t)
+      b = l.config.globalProperties, _(b, t)
     )
-      return g[t];
+      return b[t];
   },
   set({ _: e }, t, r) {
     const { data: n, setupState: s, ctx: o } = e;
@@ -1571,14 +1571,14 @@ function Za(e) {
     // lifecycle
     created: c,
     beforeMount: d,
-    mounted: g,
-    beforeUpdate: v,
+    mounted: b,
+    beforeUpdate: x,
     updated: k,
-    activated: h,
-    deactivated: V,
-    beforeDestroy: p,
-    beforeUnmount: x,
-    destroyed: E,
+    activated: v,
+    deactivated: S,
+    beforeDestroy: g,
+    beforeUnmount: h,
+    destroyed: N,
     unmounted: q,
     render: W,
     renderTracked: A,
@@ -1604,7 +1604,7 @@ function Za(e) {
   }
   if (Cn = !0, o)
     for (const U in o) {
-      const B = o[U], je = Z(B) ? B.bind(r, r) : Z(B.get) ? B.get.bind(r, r) : Qe, Pe = !Z(B) && Z(B.set) ? B.set.bind(r) : Qe, me = fe({
+      const B = o[U], je = Z(B) ? B.bind(r, r) : Z(B.get) ? B.get.bind(r, r) : Qe, Pe = !Z(B) && Z(B.set) ? B.set.bind(r) : Qe, me = de({
         get: je,
         set: Pe
       });
@@ -1628,7 +1628,7 @@ function Za(e) {
   function ee(U, B) {
     X(B) ? B.forEach((je) => U(je.bind(r))) : B && U(B.bind(r));
   }
-  if (ee(Ea, d), ee(Uo, g), ee(Ia, v), ee(Fa, k), ee(La, h), ee(Na, V), ee(Xa, H), ee(Ha, A), ee(Ja, Y), ee(Ma, x), ee(Zo, q), ee(Wa, F), X(Q))
+  if (ee(Ea, d), ee(Uo, b), ee(Ia, x), ee(Fa, k), ee(La, v), ee(Na, S), ee(Xa, H), ee(Ha, A), ee(Ja, Y), ee(Ma, h), ee(Zo, q), ee(Wa, F), X(Q))
     if (Q.length) {
       const U = e.exposed || (e.exposed = {});
       Q.forEach((B) => {
@@ -1667,7 +1667,7 @@ function bs(e, t, r) {
 }
 function Go(e, t, r, n) {
   let s = n.includes(".") ? ii(r, n) : () => r[n];
-  if (de(e)) {
+  if (fe(e)) {
     const o = t[e];
     Z(o) && Ae(s, o);
   } else if (Z(e))
@@ -1827,10 +1827,10 @@ function Qa(e, t) {
       directive(c, d) {
         return d ? (o.directives[c] = d, u) : o.directives[c];
       },
-      mount(c, d, g) {
+      mount(c, d, b) {
         if (!l) {
-          const v = u._ceVNode || Ke(n, s);
-          return v.appContext = o, g === !0 ? g = "svg" : g === !1 && (g = void 0), e(v, c, g), l = !0, u._container = c, c.__vue_app__ = u, on(v.component);
+          const x = u._ceVNode || Ke(n, s);
+          return x.appContext = o, b === !0 ? b = "svg" : b === !1 && (b = void 0), e(x, c, b), l = !0, u._container = c, c.__vue_app__ = u, on(x.component);
         }
       },
       onUnmount(c) {
@@ -1904,26 +1904,26 @@ function tl(e, t, r, n) {
     if (i & 8) {
       const c = e.vnode.dynamicProps;
       for (let d = 0; d < c.length; d++) {
-        let g = c[d];
-        if (nn(e.emitsOptions, g))
+        let b = c[d];
+        if (nn(e.emitsOptions, b))
           continue;
-        const v = t[g];
+        const x = t[b];
         if (l)
-          if (_(o, g))
-            v !== o[g] && (o[g] = v, u = !0);
+          if (_(o, b))
+            x !== o[b] && (o[b] = x, u = !0);
           else {
-            const k = gt(g);
+            const k = gt(b);
             s[k] = jn(
               l,
               a,
               k,
-              v,
+              x,
               e,
               !1
             );
           }
         else
-          v !== o[g] && (o[g] = v, u = !0);
+          x !== o[b] && (o[b] = x, u = !0);
       }
     }
   } else {
@@ -2017,8 +2017,8 @@ function $o(e, t, r = !1) {
   if (!Z(e)) {
     const c = (d) => {
       l = !0;
-      const [g, v] = $o(d, t, !0);
-      Se(i, g), v && a.push(...v);
+      const [b, x] = $o(d, t, !0);
+      Se(i, b), x && a.push(...x);
     };
     !r && t.mixins.length && t.mixins.forEach(c), e.extends && c(e.extends), e.mixins && e.mixins.forEach(c);
   }
@@ -2033,25 +2033,25 @@ function $o(e, t, r = !1) {
     for (const c in o) {
       const d = gt(c);
       if (vs(d)) {
-        const g = o[c], v = i[d] = X(g) || Z(g) ? { type: g } : Se({}, g), k = v.type;
-        let h = !1, V = !0;
+        const b = o[c], x = i[d] = X(b) || Z(b) ? { type: b } : Se({}, b), k = x.type;
+        let v = !1, S = !0;
         if (X(k))
-          for (let p = 0; p < k.length; ++p) {
-            const x = k[p], E = Z(x) && x.name;
-            if (E === "Boolean") {
-              h = !0;
+          for (let g = 0; g < k.length; ++g) {
+            const h = k[g], N = Z(h) && h.name;
+            if (N === "Boolean") {
+              v = !0;
               break;
-            } else E === "String" && (V = !1);
+            } else N === "String" && (S = !1);
           }
         else
-          h = Z(k) && k.name === "Boolean";
-        v[
+          v = Z(k) && k.name === "Boolean";
+        x[
           0
           /* shouldCast */
-        ] = h, v[
+        ] = v, x[
           1
           /* shouldCastTrue */
-        ] = V, (h || _(v, "default")) && a.push(d);
+        ] = S, (v || _(x, "default")) && a.push(d);
       }
     }
   const u = [i, a];
@@ -2116,289 +2116,289 @@ function al(e, t) {
     setText: u,
     setElementText: c,
     parentNode: d,
-    nextSibling: g,
-    setScopeId: v = Qe,
+    nextSibling: b,
+    setScopeId: x = Qe,
     insertStaticContent: k
-  } = e, h = (f, b, y, R = null, w = null, z = null, N = void 0, L = null, P = !!b.dynamicChildren) => {
-    if (f === b)
+  } = e, v = (f, m, y, T = null, w = null, z = null, O = void 0, L = null, P = !!m.dynamicChildren) => {
+    if (f === m)
       return;
-    f && !At(f, b) && (R = Nt(f), be(f, w, z, !0), f = null), b.patchFlag === -2 && (P = !1, b.dynamicChildren = null);
-    const { type: T, ref: J, shapeFlag: O } = b;
-    switch (T) {
+    f && !At(f, m) && (T = Nt(f), be(f, w, z, !0), f = null), m.patchFlag === -2 && (P = !1, m.dynamicChildren = null);
+    const { type: C, ref: J, shapeFlag: E } = m;
+    switch (C) {
       case sn:
-        V(f, b, y, R);
+        S(f, m, y, T);
         break;
       case xt:
-        p(f, b, y, R);
+        g(f, m, y, T);
         break;
       case bn:
-        f == null && x(b, y, R, N);
+        f == null && h(m, y, T, O);
         break;
       case ie:
         pe(
           f,
-          b,
+          m,
           y,
-          R,
+          T,
           w,
           z,
-          N,
+          O,
           L,
           P
         );
         break;
       default:
-        O & 1 ? W(
+        E & 1 ? W(
           f,
-          b,
+          m,
           y,
-          R,
+          T,
           w,
           z,
-          N,
+          O,
           L,
           P
-        ) : O & 6 ? ve(
+        ) : E & 6 ? ve(
           f,
-          b,
+          m,
           y,
-          R,
+          T,
           w,
           z,
-          N,
+          O,
           L,
           P
-        ) : (O & 64 || O & 128) && T.process(
+        ) : (E & 64 || E & 128) && C.process(
           f,
-          b,
+          m,
           y,
-          R,
+          T,
           w,
           z,
-          N,
+          O,
           L,
           P,
           kt
         );
     }
-    J != null && w ? or(J, f && f.ref, z, b || f, !b) : J == null && f && f.ref != null && or(f.ref, null, z, f, !0);
-  }, V = (f, b, y, R) => {
+    J != null && w ? or(J, f && f.ref, z, m || f, !m) : J == null && f && f.ref != null && or(f.ref, null, z, f, !0);
+  }, S = (f, m, y, T) => {
     if (f == null)
       n(
-        b.el = a(b.children),
+        m.el = a(m.children),
         y,
-        R
+        T
       );
     else {
-      const w = b.el = f.el;
-      b.children !== f.children && u(w, b.children);
+      const w = m.el = f.el;
+      m.children !== f.children && u(w, m.children);
     }
-  }, p = (f, b, y, R) => {
+  }, g = (f, m, y, T) => {
     f == null ? n(
-      b.el = l(b.children || ""),
+      m.el = l(m.children || ""),
       y,
-      R
-    ) : b.el = f.el;
-  }, x = (f, b, y, R) => {
+      T
+    ) : m.el = f.el;
+  }, h = (f, m, y, T) => {
     [f.el, f.anchor] = k(
       f.children,
-      b,
+      m,
       y,
-      R,
+      T,
       f.el,
       f.anchor
     );
-  }, E = ({ el: f, anchor: b }, y, R) => {
+  }, N = ({ el: f, anchor: m }, y, T) => {
     let w;
-    for (; f && f !== b; )
-      w = g(f), n(f, y, R), f = w;
-    n(b, y, R);
-  }, q = ({ el: f, anchor: b }) => {
+    for (; f && f !== m; )
+      w = b(f), n(f, y, T), f = w;
+    n(m, y, T);
+  }, q = ({ el: f, anchor: m }) => {
     let y;
-    for (; f && f !== b; )
-      y = g(f), s(f), f = y;
-    s(b);
-  }, W = (f, b, y, R, w, z, N, L, P) => {
-    b.type === "svg" ? N = "svg" : b.type === "math" && (N = "mathml"), f == null ? A(
-      b,
+    for (; f && f !== m; )
+      y = b(f), s(f), f = y;
+    s(m);
+  }, W = (f, m, y, T, w, z, O, L, P) => {
+    m.type === "svg" ? O = "svg" : m.type === "math" && (O = "mathml"), f == null ? A(
+      m,
       y,
-      R,
+      T,
       w,
       z,
-      N,
+      O,
       L,
       P
     ) : F(
       f,
-      b,
+      m,
       w,
       z,
-      N,
+      O,
       L,
       P
     );
-  }, A = (f, b, y, R, w, z, N, L) => {
-    let P, T;
-    const { props: J, shapeFlag: O, transition: M, dirs: K } = f;
+  }, A = (f, m, y, T, w, z, O, L) => {
+    let P, C;
+    const { props: J, shapeFlag: E, transition: M, dirs: K } = f;
     if (P = f.el = i(
       f.type,
       z,
       J && J.is,
       J
-    ), O & 8 ? c(P, f.children) : O & 16 && H(
+    ), E & 8 ? c(P, f.children) : E & 16 && H(
       f.children,
       P,
       null,
-      R,
+      T,
       w,
       mn(f, z),
-      N,
+      O,
       L
-    ), K && wt(f, null, R, "created"), Y(P, f, f.scopeId, N, R), J) {
+    ), K && wt(f, null, T, "created"), Y(P, f, f.scopeId, O, T), J) {
       for (const se in J)
-        se !== "value" && !rr(se) && o(P, se, null, J[se], z, R);
-      "value" in J && o(P, "value", null, J.value, z), (T = J.onVnodeBeforeMount) && Be(T, R, f);
+        se !== "value" && !rr(se) && o(P, se, null, J[se], z, T);
+      "value" in J && o(P, "value", null, J.value, z), (C = J.onVnodeBeforeMount) && Be(C, T, f);
     }
-    K && wt(f, null, R, "beforeMount");
+    K && wt(f, null, T, "beforeMount");
     const G = ll(w, M);
-    G && M.beforeEnter(P), n(P, b, y), ((T = J && J.onVnodeMounted) || G || K) && Oe(() => {
-      T && Be(T, R, f), G && M.enter(P), K && wt(f, null, R, "mounted");
+    G && M.beforeEnter(P), n(P, m, y), ((C = J && J.onVnodeMounted) || G || K) && Oe(() => {
+      C && Be(C, T, f), G && M.enter(P), K && wt(f, null, T, "mounted");
     }, w);
-  }, Y = (f, b, y, R, w) => {
-    if (y && v(f, y), R)
-      for (let z = 0; z < R.length; z++)
-        v(f, R[z]);
+  }, Y = (f, m, y, T, w) => {
+    if (y && x(f, y), T)
+      for (let z = 0; z < T.length; z++)
+        x(f, T[z]);
     if (w) {
       let z = w.subTree;
-      if (b === z || li(z.type) && (z.ssContent === b || z.ssFallback === b)) {
-        const N = w.vnode;
+      if (m === z || li(z.type) && (z.ssContent === m || z.ssFallback === m)) {
+        const O = w.vnode;
         Y(
           f,
-          N,
-          N.scopeId,
-          N.slotScopeIds,
+          O,
+          O.scopeId,
+          O.slotScopeIds,
           w.parent
         );
       }
     }
-  }, H = (f, b, y, R, w, z, N, L, P = 0) => {
-    for (let T = P; T < f.length; T++) {
-      const J = f[T] = L ? mt(f[T]) : Ye(f[T]);
-      h(
+  }, H = (f, m, y, T, w, z, O, L, P = 0) => {
+    for (let C = P; C < f.length; C++) {
+      const J = f[C] = L ? mt(f[C]) : Ye(f[C]);
+      v(
         null,
         J,
-        b,
+        m,
         y,
-        R,
+        T,
         w,
         z,
-        N,
+        O,
         L
       );
     }
-  }, F = (f, b, y, R, w, z, N) => {
-    const L = b.el = f.el;
-    let { patchFlag: P, dynamicChildren: T, dirs: J } = b;
+  }, F = (f, m, y, T, w, z, O) => {
+    const L = m.el = f.el;
+    let { patchFlag: P, dynamicChildren: C, dirs: J } = m;
     P |= f.patchFlag & 16;
-    const O = f.props || re, M = b.props || re;
+    const E = f.props || re, M = m.props || re;
     let K;
-    if (y && zt(y, !1), (K = M.onVnodeBeforeUpdate) && Be(K, y, b, f), J && wt(b, f, y, "beforeUpdate"), y && zt(y, !0), (O.innerHTML && M.innerHTML == null || O.textContent && M.textContent == null) && c(L, ""), T ? Q(
+    if (y && zt(y, !1), (K = M.onVnodeBeforeUpdate) && Be(K, y, m, f), J && wt(m, f, y, "beforeUpdate"), y && zt(y, !0), (E.innerHTML && M.innerHTML == null || E.textContent && M.textContent == null) && c(L, ""), C ? Q(
       f.dynamicChildren,
-      T,
+      C,
       L,
       y,
-      R,
-      mn(b, w),
+      T,
+      mn(m, w),
       z
-    ) : N || B(
+    ) : O || B(
       f,
-      b,
+      m,
       L,
       null,
       y,
-      R,
-      mn(b, w),
+      T,
+      mn(m, w),
       z,
       !1
     ), P > 0) {
       if (P & 16)
-        ce(L, O, M, y, w);
-      else if (P & 2 && O.class !== M.class && o(L, "class", null, M.class, w), P & 4 && o(L, "style", O.style, M.style, w), P & 8) {
-        const G = b.dynamicProps;
+        ce(L, E, M, y, w);
+      else if (P & 2 && E.class !== M.class && o(L, "class", null, M.class, w), P & 4 && o(L, "style", E.style, M.style, w), P & 8) {
+        const G = m.dynamicProps;
         for (let se = 0; se < G.length; se++) {
-          const $ = G[se], qe = O[$], Le = M[$];
+          const $ = G[se], qe = E[$], Le = M[$];
           (Le !== qe || $ === "value") && o(L, $, qe, Le, w, y);
         }
       }
-      P & 1 && f.children !== b.children && c(L, b.children);
-    } else !N && T == null && ce(L, O, M, y, w);
+      P & 1 && f.children !== m.children && c(L, m.children);
+    } else !O && C == null && ce(L, E, M, y, w);
     ((K = M.onVnodeUpdated) || J) && Oe(() => {
-      K && Be(K, y, b, f), J && wt(b, f, y, "updated");
-    }, R);
-  }, Q = (f, b, y, R, w, z, N) => {
-    for (let L = 0; L < b.length; L++) {
-      const P = f[L], T = b[L], J = (
+      K && Be(K, y, m, f), J && wt(m, f, y, "updated");
+    }, T);
+  }, Q = (f, m, y, T, w, z, O) => {
+    for (let L = 0; L < m.length; L++) {
+      const P = f[L], C = m[L], J = (
         // oldVNode may be an errored async setup() component inside Suspense
         // which will not have a mounted element
         P.el && // - In the case of a Fragment, we need to provide the actual parent
         // of the Fragment itself so it can move its children.
         (P.type === ie || // - In the case of different nodes, there is going to be a replacement
         // which also requires the correct parent container
-        !At(P, T) || // - In the case of a component, it could contain anything.
+        !At(P, C) || // - In the case of a component, it could contain anything.
         P.shapeFlag & 198) ? d(P.el) : (
           // In other cases, the parent container is not actually used so we
           // just pass the block element here to avoid a DOM parentNode call.
           y
         )
       );
-      h(
+      v(
         P,
-        T,
+        C,
         J,
         null,
-        R,
+        T,
         w,
         z,
-        N,
+        O,
         !0
       );
     }
-  }, ce = (f, b, y, R, w) => {
-    if (b !== y) {
-      if (b !== re)
-        for (const z in b)
+  }, ce = (f, m, y, T, w) => {
+    if (m !== y) {
+      if (m !== re)
+        for (const z in m)
           !rr(z) && !(z in y) && o(
             f,
             z,
-            b[z],
+            m[z],
             null,
             w,
-            R
+            T
           );
       for (const z in y) {
         if (rr(z)) continue;
-        const N = y[z], L = b[z];
-        N !== L && z !== "value" && o(f, z, L, N, w, R);
+        const O = y[z], L = m[z];
+        O !== L && z !== "value" && o(f, z, L, O, w, T);
       }
-      "value" in y && o(f, "value", b.value, y.value, w);
+      "value" in y && o(f, "value", m.value, y.value, w);
     }
-  }, pe = (f, b, y, R, w, z, N, L, P) => {
-    const T = b.el = f ? f.el : a(""), J = b.anchor = f ? f.anchor : a("");
-    let { patchFlag: O, dynamicChildren: M, slotScopeIds: K } = b;
-    K && (L = L ? L.concat(K) : K), f == null ? (n(T, y, R), n(J, y, R), H(
+  }, pe = (f, m, y, T, w, z, O, L, P) => {
+    const C = m.el = f ? f.el : a(""), J = m.anchor = f ? f.anchor : a("");
+    let { patchFlag: E, dynamicChildren: M, slotScopeIds: K } = m;
+    K && (L = L ? L.concat(K) : K), f == null ? (n(C, y, T), n(J, y, T), H(
       // #10007
       // such fragment like `<></>` will be compiled into
       // a fragment which doesn't have a children.
       // In this case fallback to an empty array
-      b.children || [],
+      m.children || [],
       y,
       J,
       w,
       z,
-      N,
+      O,
       L,
       P
-    )) : O > 0 && O & 64 && M && // #2715 the previous fragment could've been a BAILed one as a result
+    )) : E > 0 && E & 64 && M && // #2715 the previous fragment could've been a BAILed one as a result
     // of renderSlot() with no valid children
     f.dynamicChildren ? (Q(
       f.dynamicChildren,
@@ -2406,92 +2406,92 @@ function al(e, t) {
       y,
       w,
       z,
-      N,
+      O,
       L
     ), // #2080 if the stable fragment has a key, it's a <template v-for> that may
     //  get moved around. Make sure all root level vnodes inherit el.
     // #2134 or if it's a component root, it may also get moved around
     // as the component is being moved.
-    (b.key != null || w && b === w.subTree) && ni(
+    (m.key != null || w && m === w.subTree) && ni(
       f,
-      b,
+      m,
       !0
       /* shallow */
     )) : B(
       f,
-      b,
+      m,
       y,
       J,
       w,
       z,
-      N,
+      O,
       L,
       P
     );
-  }, ve = (f, b, y, R, w, z, N, L, P) => {
-    b.slotScopeIds = L, f == null ? b.shapeFlag & 512 ? w.ctx.activate(
-      b,
+  }, ve = (f, m, y, T, w, z, O, L, P) => {
+    m.slotScopeIds = L, f == null ? m.shapeFlag & 512 ? w.ctx.activate(
+      m,
       y,
-      R,
-      N,
+      T,
+      O,
       P
     ) : Ve(
-      b,
+      m,
       y,
-      R,
+      T,
       w,
       z,
-      N,
+      O,
       P
-    ) : Fe(f, b, P);
-  }, Ve = (f, b, y, R, w, z, N) => {
+    ) : Fe(f, m, P);
+  }, Ve = (f, m, y, T, w, z, O) => {
     const L = f.component = Cl(
       f,
-      R,
+      T,
       w
     );
-    if (Xo(f) && (L.ctx.renderer = kt), Vl(L, !1, N), L.asyncDep) {
-      if (w && w.registerDep(L, ee, N), !f.el) {
+    if (Xo(f) && (L.ctx.renderer = kt), Vl(L, !1, O), L.asyncDep) {
+      if (w && w.registerDep(L, ee, O), !f.el) {
         const P = L.subTree = Ke(xt);
-        p(null, P, b, y), f.placeholder = P.el;
+        g(null, P, m, y), f.placeholder = P.el;
       }
     } else
       ee(
         L,
         f,
-        b,
+        m,
         y,
         w,
         z,
-        N
+        O
       );
-  }, Fe = (f, b, y) => {
-    const R = b.component = f.component;
-    if (vl(f, b, y))
-      if (R.asyncDep && !R.asyncResolved) {
-        U(R, b, y);
+  }, Fe = (f, m, y) => {
+    const T = m.component = f.component;
+    if (vl(f, m, y))
+      if (T.asyncDep && !T.asyncResolved) {
+        U(T, m, y);
         return;
       } else
-        R.next = b, R.update();
+        T.next = m, T.update();
     else
-      b.el = f.el, R.vnode = b;
-  }, ee = (f, b, y, R, w, z, N) => {
+      m.el = f.el, T.vnode = m;
+  }, ee = (f, m, y, T, w, z, O) => {
     const L = () => {
       if (f.isMounted) {
-        let { next: O, bu: M, u: K, parent: G, vnode: se } = f;
+        let { next: E, bu: M, u: K, parent: G, vnode: se } = f;
         {
           const Ze = si(f);
           if (Ze) {
-            O && (O.el = se.el, U(f, O, N)), Ze.asyncDep.then(() => {
+            E && (E.el = se.el, U(f, E, O)), Ze.asyncDep.then(() => {
               f.isUnmounted || L();
             });
             return;
           }
         }
-        let $ = O, qe;
-        zt(f, !1), O ? (O.el = se.el, U(f, O, N)) : O = se, M && Lr(M), (qe = O.props && O.props.onVnodeBeforeUpdate) && Be(qe, G, O, se), zt(f, !0);
+        let $ = E, qe;
+        zt(f, !1), E ? (E.el = se.el, U(f, E, O)) : E = se, M && Lr(M), (qe = E.props && E.props.onVnodeBeforeUpdate) && Be(qe, G, E, se), zt(f, !0);
         const Le = ys(f), Ue = f.subTree;
-        f.subTree = Le, h(
+        f.subTree = Le, v(
           Ue,
           Le,
           // parent may have changed if it's in a teleport
@@ -2501,206 +2501,206 @@ function al(e, t) {
           f,
           w,
           z
-        ), O.el = Le.el, $ === null && xl(f, Le.el), K && Oe(K, w), (qe = O.props && O.props.onVnodeUpdated) && Oe(
-          () => Be(qe, G, O, se),
+        ), E.el = Le.el, $ === null && xl(f, Le.el), K && Oe(K, w), (qe = E.props && E.props.onVnodeUpdated) && Oe(
+          () => Be(qe, G, E, se),
           w
         );
       } else {
-        let O;
-        const { el: M, props: K } = b, { bm: G, m: se, parent: $, root: qe, type: Le } = f, Ue = ir(b);
-        zt(f, !1), G && Lr(G), !Ue && (O = K && K.onVnodeBeforeMount) && Be(O, $, b), zt(f, !0);
+        let E;
+        const { el: M, props: K } = m, { bm: G, m: se, parent: $, root: qe, type: Le } = f, Ue = ir(m);
+        zt(f, !1), G && Lr(G), !Ue && (E = K && K.onVnodeBeforeMount) && Be(E, $, m), zt(f, !0);
         {
           qe.ce && // @ts-expect-error _def is private
           qe.ce._def.shadowRoot !== !1 && qe.ce._injectChildStyle(Le);
           const Ze = f.subTree = ys(f);
-          h(
+          v(
             null,
             Ze,
             y,
-            R,
+            T,
             f,
             w,
             z
-          ), b.el = Ze.el;
+          ), m.el = Ze.el;
         }
-        if (se && Oe(se, w), !Ue && (O = K && K.onVnodeMounted)) {
-          const Ze = b;
+        if (se && Oe(se, w), !Ue && (E = K && K.onVnodeMounted)) {
+          const Ze = m;
           Oe(
-            () => Be(O, $, Ze),
+            () => Be(E, $, Ze),
             w
           );
         }
-        (b.shapeFlag & 256 || $ && ir($.vnode) && $.vnode.shapeFlag & 256) && f.a && Oe(f.a, w), f.isMounted = !0, b = y = R = null;
+        (m.shapeFlag & 256 || $ && ir($.vnode) && $.vnode.shapeFlag & 256) && f.a && Oe(f.a, w), f.isMounted = !0, m = y = T = null;
       }
     };
     f.scope.on();
     const P = f.effect = new ko(L);
     f.scope.off();
-    const T = f.update = P.run.bind(P), J = f.job = P.runIfDirty.bind(P);
-    J.i = f, J.id = f.uid, P.scheduler = () => An(J), zt(f, !0), T();
-  }, U = (f, b, y) => {
-    b.component = f;
-    const R = f.vnode.props;
-    f.vnode = b, f.next = null, tl(f, b.props, R, y), ol(f, b.children, y), at(), fs(f), lt();
-  }, B = (f, b, y, R, w, z, N, L, P = !1) => {
-    const T = f && f.children, J = f ? f.shapeFlag : 0, O = b.children, { patchFlag: M, shapeFlag: K } = b;
+    const C = f.update = P.run.bind(P), J = f.job = P.runIfDirty.bind(P);
+    J.i = f, J.id = f.uid, P.scheduler = () => An(J), zt(f, !0), C();
+  }, U = (f, m, y) => {
+    m.component = f;
+    const T = f.vnode.props;
+    f.vnode = m, f.next = null, tl(f, m.props, T, y), ol(f, m.children, y), at(), fs(f), lt();
+  }, B = (f, m, y, T, w, z, O, L, P = !1) => {
+    const C = f && f.children, J = f ? f.shapeFlag : 0, E = m.children, { patchFlag: M, shapeFlag: K } = m;
     if (M > 0) {
       if (M & 128) {
         Pe(
-          T,
-          O,
+          C,
+          E,
           y,
-          R,
+          T,
           w,
           z,
-          N,
+          O,
           L,
           P
         );
         return;
       } else if (M & 256) {
         je(
-          T,
-          O,
+          C,
+          E,
           y,
-          R,
+          T,
           w,
           z,
-          N,
+          O,
           L,
           P
         );
         return;
       }
     }
-    K & 8 ? (J & 16 && dt(T, w, z), O !== T && c(y, O)) : J & 16 ? K & 16 ? Pe(
-      T,
-      O,
+    K & 8 ? (J & 16 && dt(C, w, z), E !== C && c(y, E)) : J & 16 ? K & 16 ? Pe(
+      C,
+      E,
       y,
-      R,
+      T,
       w,
       z,
-      N,
+      O,
       L,
       P
-    ) : dt(T, w, z, !0) : (J & 8 && c(y, ""), K & 16 && H(
-      O,
+    ) : dt(C, w, z, !0) : (J & 8 && c(y, ""), K & 16 && H(
+      E,
       y,
-      R,
+      T,
       w,
       z,
-      N,
+      O,
       L,
       P
     ));
-  }, je = (f, b, y, R, w, z, N, L, P) => {
-    f = f || Jt, b = b || Jt;
-    const T = f.length, J = b.length, O = Math.min(T, J);
+  }, je = (f, m, y, T, w, z, O, L, P) => {
+    f = f || Jt, m = m || Jt;
+    const C = f.length, J = m.length, E = Math.min(C, J);
     let M;
-    for (M = 0; M < O; M++) {
-      const K = b[M] = P ? mt(b[M]) : Ye(b[M]);
-      h(
+    for (M = 0; M < E; M++) {
+      const K = m[M] = P ? mt(m[M]) : Ye(m[M]);
+      v(
         f[M],
         K,
         y,
         null,
         w,
         z,
-        N,
+        O,
         L,
         P
       );
     }
-    T > J ? dt(
+    C > J ? dt(
       f,
       w,
       z,
       !0,
       !1,
-      O
+      E
     ) : H(
-      b,
+      m,
       y,
-      R,
+      T,
       w,
       z,
-      N,
+      O,
       L,
       P,
-      O
+      E
     );
-  }, Pe = (f, b, y, R, w, z, N, L, P) => {
-    let T = 0;
-    const J = b.length;
-    let O = f.length - 1, M = J - 1;
-    for (; T <= O && T <= M; ) {
-      const K = f[T], G = b[T] = P ? mt(b[T]) : Ye(b[T]);
+  }, Pe = (f, m, y, T, w, z, O, L, P) => {
+    let C = 0;
+    const J = m.length;
+    let E = f.length - 1, M = J - 1;
+    for (; C <= E && C <= M; ) {
+      const K = f[C], G = m[C] = P ? mt(m[C]) : Ye(m[C]);
       if (At(K, G))
-        h(
+        v(
           K,
           G,
           y,
           null,
           w,
           z,
-          N,
+          O,
           L,
           P
         );
       else
         break;
-      T++;
+      C++;
     }
-    for (; T <= O && T <= M; ) {
-      const K = f[O], G = b[M] = P ? mt(b[M]) : Ye(b[M]);
+    for (; C <= E && C <= M; ) {
+      const K = f[E], G = m[M] = P ? mt(m[M]) : Ye(m[M]);
       if (At(K, G))
-        h(
+        v(
           K,
           G,
           y,
           null,
           w,
           z,
-          N,
+          O,
           L,
           P
         );
       else
         break;
-      O--, M--;
+      E--, M--;
     }
-    if (T > O) {
-      if (T <= M) {
-        const K = M + 1, G = K < J ? b[K].el : R;
-        for (; T <= M; )
-          h(
+    if (C > E) {
+      if (C <= M) {
+        const K = M + 1, G = K < J ? m[K].el : T;
+        for (; C <= M; )
+          v(
             null,
-            b[T] = P ? mt(b[T]) : Ye(b[T]),
+            m[C] = P ? mt(m[C]) : Ye(m[C]),
             y,
             G,
             w,
             z,
-            N,
+            O,
             L,
             P
-          ), T++;
+          ), C++;
       }
-    } else if (T > M)
-      for (; T <= O; )
-        be(f[T], w, z, !0), T++;
+    } else if (C > M)
+      for (; C <= E; )
+        be(f[C], w, z, !0), C++;
     else {
-      const K = T, G = T, se = /* @__PURE__ */ new Map();
-      for (T = G; T <= M; T++) {
-        const Ne = b[T] = P ? mt(b[T]) : Ye(b[T]);
-        Ne.key != null && se.set(Ne.key, T);
+      const K = C, G = C, se = /* @__PURE__ */ new Map();
+      for (C = G; C <= M; C++) {
+        const Ne = m[C] = P ? mt(m[C]) : Ye(m[C]);
+        Ne.key != null && se.set(Ne.key, C);
       }
       let $, qe = 0;
       const Le = M - G + 1;
       let Ue = !1, Ze = 0;
       const Dt = new Array(Le);
-      for (T = 0; T < Le; T++) Dt[T] = 0;
-      for (T = K; T <= O; T++) {
-        const Ne = f[T];
+      for (C = 0; C < Le; C++) Dt[C] = 0;
+      for (C = K; C <= E; C++) {
+        const Ne = f[C];
         if (qe >= Le) {
           be(Ne, w, z, !0);
           continue;
@@ -2710,139 +2710,139 @@ function al(e, t) {
           Ge = se.get(Ne.key);
         else
           for ($ = G; $ <= M; $++)
-            if (Dt[$ - G] === 0 && At(Ne, b[$])) {
+            if (Dt[$ - G] === 0 && At(Ne, m[$])) {
               Ge = $;
               break;
             }
-        Ge === void 0 ? be(Ne, w, z, !0) : (Dt[Ge - G] = T + 1, Ge >= Ze ? Ze = Ge : Ue = !0, h(
+        Ge === void 0 ? be(Ne, w, z, !0) : (Dt[Ge - G] = C + 1, Ge >= Ze ? Ze = Ge : Ue = !0, v(
           Ne,
-          b[Ge],
+          m[Ge],
           y,
           null,
           w,
           z,
-          N,
+          O,
           L,
           P
         ), qe++);
       }
       const os = Ue ? cl(Dt) : Jt;
-      for ($ = os.length - 1, T = Le - 1; T >= 0; T--) {
-        const Ne = G + T, Ge = b[Ne], is = b[Ne + 1], as = Ne + 1 < J ? (
+      for ($ = os.length - 1, C = Le - 1; C >= 0; C--) {
+        const Ne = G + C, Ge = m[Ne], is = m[Ne + 1], as = Ne + 1 < J ? (
           // #13559, fallback to el placeholder for unresolved async component
           is.el || is.placeholder
-        ) : R;
-        Dt[T] === 0 ? h(
+        ) : T;
+        Dt[C] === 0 ? v(
           null,
           Ge,
           y,
           as,
           w,
           z,
-          N,
+          O,
           L,
           P
-        ) : Ue && ($ < 0 || T !== os[$] ? me(Ge, y, as, 2) : $--);
+        ) : Ue && ($ < 0 || C !== os[$] ? me(Ge, y, as, 2) : $--);
       }
     }
-  }, me = (f, b, y, R, w = null) => {
-    const { el: z, type: N, transition: L, children: P, shapeFlag: T } = f;
-    if (T & 6) {
-      me(f.component.subTree, b, y, R);
+  }, me = (f, m, y, T, w = null) => {
+    const { el: z, type: O, transition: L, children: P, shapeFlag: C } = f;
+    if (C & 6) {
+      me(f.component.subTree, m, y, T);
       return;
     }
-    if (T & 128) {
-      f.suspense.move(b, y, R);
+    if (C & 128) {
+      f.suspense.move(m, y, T);
       return;
     }
-    if (T & 64) {
-      N.move(f, b, y, kt);
+    if (C & 64) {
+      O.move(f, m, y, kt);
       return;
     }
-    if (N === ie) {
-      n(z, b, y);
-      for (let O = 0; O < P.length; O++)
-        me(P[O], b, y, R);
-      n(f.anchor, b, y);
+    if (O === ie) {
+      n(z, m, y);
+      for (let E = 0; E < P.length; E++)
+        me(P[E], m, y, T);
+      n(f.anchor, m, y);
       return;
     }
-    if (N === bn) {
-      E(f, b, y);
+    if (O === bn) {
+      N(f, m, y);
       return;
     }
-    if (R !== 2 && T & 1 && L)
-      if (R === 0)
-        L.beforeEnter(z), n(z, b, y), Oe(() => L.enter(z), w);
+    if (T !== 2 && C & 1 && L)
+      if (T === 0)
+        L.beforeEnter(z), n(z, m, y), Oe(() => L.enter(z), w);
       else {
-        const { leave: O, delayLeave: M, afterLeave: K } = L, G = () => {
-          f.ctx.isUnmounted ? s(z) : n(z, b, y);
+        const { leave: E, delayLeave: M, afterLeave: K } = L, G = () => {
+          f.ctx.isUnmounted ? s(z) : n(z, m, y);
         }, se = () => {
           z._isLeaving && z[qa](
             !0
             /* cancelled */
-          ), O(z, () => {
+          ), E(z, () => {
             G(), K && K();
           });
         };
         M ? M(z, G, se) : se();
       }
     else
-      n(z, b, y);
-  }, be = (f, b, y, R = !1, w = !1) => {
+      n(z, m, y);
+  }, be = (f, m, y, T = !1, w = !1) => {
     const {
       type: z,
-      props: N,
+      props: O,
       ref: L,
       children: P,
-      dynamicChildren: T,
+      dynamicChildren: C,
       shapeFlag: J,
-      patchFlag: O,
+      patchFlag: E,
       dirs: M,
       cacheIndex: K
     } = f;
-    if (O === -2 && (w = !1), L != null && (at(), or(L, null, y, f, !0), lt()), K != null && (b.renderCache[K] = void 0), J & 256) {
-      b.ctx.deactivate(f);
+    if (E === -2 && (w = !1), L != null && (at(), or(L, null, y, f, !0), lt()), K != null && (m.renderCache[K] = void 0), J & 256) {
+      m.ctx.deactivate(f);
       return;
     }
     const G = J & 1 && M, se = !ir(f);
     let $;
-    if (se && ($ = N && N.onVnodeBeforeUnmount) && Be($, b, f), J & 6)
-      Sr(f.component, y, R);
+    if (se && ($ = O && O.onVnodeBeforeUnmount) && Be($, m, f), J & 6)
+      Sr(f.component, y, T);
     else {
       if (J & 128) {
-        f.suspense.unmount(y, R);
+        f.suspense.unmount(y, T);
         return;
       }
-      G && wt(f, null, b, "beforeUnmount"), J & 64 ? f.type.remove(
+      G && wt(f, null, m, "beforeUnmount"), J & 64 ? f.type.remove(
         f,
-        b,
+        m,
         y,
         kt,
-        R
-      ) : T && // #5154
+        T
+      ) : C && // #5154
       // when v-once is used inside a block, setBlockTracking(-1) marks the
       // parent block with hasOnce: true
       // so that it doesn't take the fast path during unmount - otherwise
       // components nested in v-once are never unmounted.
-      !T.hasOnce && // #1153: fast path should not be taken for non-stable (v-for) fragments
-      (z !== ie || O > 0 && O & 64) ? dt(
-        T,
-        b,
+      !C.hasOnce && // #1153: fast path should not be taken for non-stable (v-for) fragments
+      (z !== ie || E > 0 && E & 64) ? dt(
+        C,
+        m,
         y,
         !1,
         !0
-      ) : (z === ie && O & 384 || !w && J & 16) && dt(P, b, y), R && yt(f);
+      ) : (z === ie && E & 384 || !w && J & 16) && dt(P, m, y), T && yt(f);
     }
-    (se && ($ = N && N.onVnodeUnmounted) || G) && Oe(() => {
-      $ && Be($, b, f), G && wt(f, null, b, "unmounted");
+    (se && ($ = O && O.onVnodeUnmounted) || G) && Oe(() => {
+      $ && Be($, m, f), G && wt(f, null, m, "unmounted");
     }, y);
   }, yt = (f) => {
-    const { type: b, el: y, anchor: R, transition: w } = f;
-    if (b === ie) {
-      ut(y, R);
+    const { type: m, el: y, anchor: T, transition: w } = f;
+    if (m === ie) {
+      ut(y, T);
       return;
     }
-    if (b === bn) {
+    if (m === bn) {
       q(f);
       return;
     }
@@ -2850,44 +2850,44 @@ function al(e, t) {
       s(y), w && !w.persisted && w.afterLeave && w.afterLeave();
     };
     if (f.shapeFlag & 1 && w && !w.persisted) {
-      const { leave: N, delayLeave: L } = w, P = () => N(y, z);
+      const { leave: O, delayLeave: L } = w, P = () => O(y, z);
       L ? L(f.el, z, P) : P();
     } else
       z();
-  }, ut = (f, b) => {
+  }, ut = (f, m) => {
     let y;
-    for (; f !== b; )
-      y = g(f), s(f), f = y;
-    s(b);
-  }, Sr = (f, b, y) => {
-    const { bum: R, scope: w, job: z, subTree: N, um: L, m: P, a: T } = f;
-    xs(P), xs(T), R && Lr(R), w.stop(), z && (z.flags |= 8, be(N, f, b, y)), L && Oe(L, b), Oe(() => {
+    for (; f !== m; )
+      y = b(f), s(f), f = y;
+    s(m);
+  }, Sr = (f, m, y) => {
+    const { bum: T, scope: w, job: z, subTree: O, um: L, m: P, a: C } = f;
+    xs(P), xs(C), T && Lr(T), w.stop(), z && (z.flags |= 8, be(O, f, m, y)), L && Oe(L, m), Oe(() => {
       f.isUnmounted = !0;
-    }, b);
-  }, dt = (f, b, y, R = !1, w = !1, z = 0) => {
-    for (let N = z; N < f.length; N++)
-      be(f[N], b, y, R, w);
+    }, m);
+  }, dt = (f, m, y, T = !1, w = !1, z = 0) => {
+    for (let O = z; O < f.length; O++)
+      be(f[O], m, y, T, w);
   }, Nt = (f) => {
     if (f.shapeFlag & 6)
       return Nt(f.component.subTree);
     if (f.shapeFlag & 128)
       return f.suspense.next();
-    const b = g(f.anchor || f.el), y = b && b[ja];
-    return y ? g(y) : b;
+    const m = b(f.anchor || f.el), y = m && m[ja];
+    return y ? b(y) : m;
   };
   let Bt = !1;
-  const Rr = (f, b, y) => {
-    f == null ? b._vnode && be(b._vnode, null, null, !0) : h(
-      b._vnode || null,
+  const Rr = (f, m, y) => {
+    f == null ? m._vnode && be(m._vnode, null, null, !0) : v(
+      m._vnode || null,
       f,
-      b,
+      m,
       null,
       null,
       null,
       y
-    ), b._vnode = f, Bt || (Bt = !0, fs(), Mo(), Bt = !1);
+    ), m._vnode = f, Bt || (Bt = !0, fs(), Mo(), Bt = !1);
   }, kt = {
-    p: h,
+    p: v,
     um: be,
     m: me,
     r: yt,
@@ -2962,29 +2962,29 @@ function oi(e, t, r = re) {
   let u;
   if (gr) {
     if (o === "sync") {
-      const v = dl();
-      u = v.__watcherHandles || (v.__watcherHandles = []);
+      const x = dl();
+      u = x.__watcherHandles || (x.__watcherHandles = []);
     } else if (!l) {
-      const v = () => {
+      const x = () => {
       };
-      return v.stop = Qe, v.resume = Qe, v.pause = Qe, v;
+      return x.stop = Qe, x.resume = Qe, x.pause = Qe, x;
     }
   }
   const c = Ce;
-  a.call = (v, k, h) => $e(v, c, k, h);
+  a.call = (x, k, v) => $e(x, c, k, v);
   let d = !1;
-  o === "post" ? a.scheduler = (v) => {
-    Oe(v, c && c.suspense);
-  } : o !== "sync" && (d = !0, a.scheduler = (v, k) => {
-    k ? v() : An(v);
-  }), a.augmentJob = (v) => {
-    t && (v.flags |= 4), d && (v.flags |= 2, c && (v.id = c.uid, v.i = c));
+  o === "post" ? a.scheduler = (x) => {
+    Oe(x, c && c.suspense);
+  } : o !== "sync" && (d = !0, a.scheduler = (x, k) => {
+    k ? x() : An(x);
+  }), a.augmentJob = (x) => {
+    t && (x.flags |= 4), d && (x.flags |= 2, c && (x.id = c.uid, x.i = c));
   };
-  const g = Sa(e, t, a);
-  return gr && (u ? u.push(g) : l && g()), g;
+  const b = Sa(e, t, a);
+  return gr && (u ? u.push(b) : l && b()), b;
 }
 function fl(e, t, r) {
-  const n = this.proxy, s = de(e) ? e.includes(".") ? ii(n, e) : () => n[e] : e.bind(n, n);
+  const n = this.proxy, s = fe(e) ? e.includes(".") ? ii(n, e) : () => n[e] : e.bind(n, n);
   let o;
   Z(t) ? o = t : (o = t.handler, r = t);
   const i = zr(this), a = oi(s, o.bind(n), r);
@@ -3005,7 +3005,7 @@ function ml(e, t, ...r) {
   const n = e.vnode.props || re;
   let s = r;
   const o = t.startsWith("update:"), i = o && pl(n, t.slice(7));
-  i && (i.trim && (s = r.map((c) => de(c) ? c.trim() : c)), i.number && (s = r.map(wn)));
+  i && (i.trim && (s = r.map((c) => fe(c) ? c.trim() : c)), i.number && (s = r.map(wn)));
   let a, l = n[a = ln(t)] || // also try camelCase event handler (#2249)
   n[a = ln(gt(t))];
   !l && o && (l = n[a = ln(qt(t))]), l && $e(
@@ -3060,29 +3060,29 @@ function ys(e) {
     render: u,
     renderCache: c,
     props: d,
-    data: g,
-    setupState: v,
+    data: b,
+    setupState: x,
     ctx: k,
-    inheritAttrs: h
-  } = e, V = Jr(e);
-  let p, x;
+    inheritAttrs: v
+  } = e, S = Jr(e);
+  let g, h;
   try {
     if (r.shapeFlag & 4) {
       const q = s || n, W = q;
-      p = Ye(
+      g = Ye(
         u.call(
           W,
           q,
           c,
           d,
-          v,
-          g,
+          x,
+          b,
           k
         )
-      ), x = a;
+      ), h = a;
     } else {
       const q = t;
-      p = Ye(
+      g = Ye(
         q.length > 1 ? q(
           d,
           { attrs: a, slots: i, emit: l }
@@ -3090,20 +3090,20 @@ function ys(e) {
           d,
           null
         )
-      ), x = t.props ? a : hl(a);
+      ), h = t.props ? a : hl(a);
     }
   } catch (q) {
-    cr.length = 0, tn(q, e, 1), p = Ke(xt);
+    cr.length = 0, tn(q, e, 1), g = Ke(xt);
   }
-  let E = p;
-  if (x && h !== !1) {
-    const q = Object.keys(x), { shapeFlag: W } = E;
-    q.length && W & 7 && (o && q.some(Mn) && (x = gl(
-      x,
+  let N = g;
+  if (h && v !== !1) {
+    const q = Object.keys(h), { shapeFlag: W } = N;
+    q.length && W & 7 && (o && q.some(Mn) && (h = gl(
+      h,
       o
-    )), E = Ut(E, x, !1, !0));
+    )), N = Ut(N, h, !1, !0));
   }
-  return r.dirs && (E = Ut(E, null, !1, !0), E.dirs = E.dirs ? E.dirs.concat(r.dirs) : r.dirs), r.transition && Qn(E, r.transition), p = E, Jr(V), p;
+  return r.dirs && (N = Ut(N, null, !1, !0), N.dirs = N.dirs ? N.dirs.concat(r.dirs) : r.dirs), r.transition && Qn(N, r.transition), g = N, Jr(S), g;
 }
 const hl = (e) => {
   let t;
@@ -3128,8 +3128,8 @@ function vl(e, t, r) {
     if (l & 8) {
       const c = t.dynamicProps;
       for (let d = 0; d < c.length; d++) {
-        const g = c[d];
-        if (i[g] !== n[g] && !nn(u, g))
+        const b = c[d];
+        if (i[b] !== n[b] && !nn(u, b))
           return !0;
       }
     }
@@ -3163,7 +3163,7 @@ function yl(e, t) {
 }
 const ie = Symbol.for("v-fgt"), sn = Symbol.for("v-txt"), xt = Symbol.for("v-cmt"), bn = Symbol.for("v-stc"), cr = [];
 let Ie = null;
-function C(e = !1) {
+function V(e = !1) {
   cr.push(Ie = e ? null : []);
 }
 function kl() {
@@ -3178,7 +3178,7 @@ function ci(e) {
 }
 function j(e, t, r, n, s, o) {
   return ci(
-    m(
+    p(
       e,
       t,
       r,
@@ -3211,8 +3211,8 @@ const di = ({ key: e }) => e ?? null, Nr = ({
   ref: e,
   ref_key: t,
   ref_for: r
-}) => (typeof e == "number" && (e = "" + e), e != null ? de(e) || ue(e) || Z(e) ? { i: Me, r: e, k: t, f: !!r } : e : null);
-function m(e, t = null, r = null, n = 0, s = null, o = e === ie ? 0 : 1, i = !1, a = !1) {
+}) => (typeof e == "number" && (e = "" + e), e != null ? fe(e) || ue(e) || Z(e) ? { i: Me, r: e, k: t, f: !!r } : e : null);
+function p(e, t = null, r = null, n = 0, s = null, o = e === ie ? 0 : 1, i = !1, a = !1) {
   const l = {
     __v_isVNode: !0,
     __v_skip: !0,
@@ -3242,7 +3242,7 @@ function m(e, t = null, r = null, n = 0, s = null, o = e === ie ? 0 : 1, i = !1,
     appContext: null,
     ctx: Me
   };
-  return a ? (es(l, r), o & 128 && e.normalize(l)) : r && (l.shapeFlag |= de(r) ? 8 : 16), hr > 0 && // avoid a block node from tracking itself
+  return a ? (es(l, r), o & 128 && e.normalize(l)) : r && (l.shapeFlag |= fe(r) ? 8 : 16), hr > 0 && // avoid a block node from tracking itself
   !i && // has current parent block
   Ie && // presence of a patch flag indicates this node needs patching on updates.
   // component nodes also should always be patched, because even if the
@@ -3266,10 +3266,10 @@ function wl(e, t = null, r = null, n = 0, s = null, o = !1) {
   if (Ll(e) && (e = e.__vccOpts), t) {
     t = zl(t);
     let { class: a, style: l } = t;
-    a && !de(a) && (t.class = he(a)), ae(l) && (Bn(l) && !X(l) && (l = Se({}, l)), t.style = _r(l));
+    a && !fe(a) && (t.class = he(a)), ae(l) && (Bn(l) && !X(l) && (l = Se({}, l)), t.style = _r(l));
   }
-  const i = de(e) ? 1 : li(e) ? 128 : Pa(e) ? 64 : ae(e) ? 4 : Z(e) ? 2 : 0;
-  return m(
+  const i = fe(e) ? 1 : li(e) ? 128 : Pa(e) ? 64 : ae(e) ? 4 : Z(e) ? 2 : 0;
+  return p(
     e,
     t,
     r,
@@ -3337,7 +3337,7 @@ function ne(e = " ", t = 0) {
   return Ke(sn, null, e, t);
 }
 function I(e = "", t = !1) {
-  return t ? (C(), er(xt, null, e)) : Ke(xt, null, e);
+  return t ? (V(), er(xt, null, e)) : Ke(xt, null, e);
 }
 function Ye(e) {
   return e == null || typeof e == "boolean" ? Ke(xt) : X(e) ? Ke(
@@ -3586,7 +3586,7 @@ function on(e) {
 function Ll(e) {
   return Z(e) && "__vccOpts" in e;
 }
-const fe = (e, t) => wa(e, t, gr), Nl = "3.5.22";
+const de = (e, t) => wa(e, t, gr), Nl = "3.5.22";
 /**
 * @vue/runtime-dom v3.5.22
 * (c) 2018-present Yuxi (Evan) You and Vue contributors
@@ -3684,11 +3684,11 @@ function Qt(e, t) {
 }
 const Wl = Symbol(""), Jl = /(?:^|;)\s*display\s*:/;
 function Hl(e, t, r) {
-  const n = e.style, s = de(r);
+  const n = e.style, s = fe(r);
   let o = !1;
   if (r && !s) {
     if (t)
-      if (de(t))
+      if (fe(t))
         for (const i of t.split(";")) {
           const a = i.slice(0, i.indexOf(":")).trim();
           r[a] == null && Or(n, a, "");
@@ -3835,7 +3835,7 @@ function Yl(e, t) {
 const Es = (e) => e.charCodeAt(0) === 111 && e.charCodeAt(1) === 110 && // lowercase letter
 e.charCodeAt(2) > 96 && e.charCodeAt(2) < 123, Al = (e, t, r, n, s, o) => {
   const i = s === "svg";
-  t === "class" ? Ml(e, n, i) : t === "style" ? Hl(e, r, n) : Dr(t) ? Mn(t) || Ul(e, t, r, n, o) : (t[0] === "." ? (t = t.slice(1), !0) : t[0] === "^" ? (t = t.slice(1), !1) : Ql(e, t, n, i)) ? (Ls(e, t, n), !e.tagName.includes("-") && (t === "value" || t === "checked" || t === "selected") && qs(e, t, n, i, o, t !== "value")) : /* #11081 force set props for possible async custom element */ e._isVueCE && (/[A-Z]/.test(t) || !de(n)) ? Ls(e, gt(t), n, o, t) : (t === "true-value" ? e._trueValue = n : t === "false-value" && (e._falseValue = n), qs(e, t, n, i));
+  t === "class" ? Ml(e, n, i) : t === "style" ? Hl(e, r, n) : Dr(t) ? Mn(t) || Ul(e, t, r, n, o) : (t[0] === "." ? (t = t.slice(1), !0) : t[0] === "^" ? (t = t.slice(1), !1) : Ql(e, t, n, i)) ? (Ls(e, t, n), !e.tagName.includes("-") && (t === "value" || t === "checked" || t === "selected") && qs(e, t, n, i, o, t !== "value")) : /* #11081 force set props for possible async custom element */ e._isVueCE && (/[A-Z]/.test(t) || !fe(n)) ? Ls(e, gt(t), n, o, t) : (t === "true-value" ? e._trueValue = n : t === "false-value" && (e._falseValue = n), qs(e, t, n, i));
 };
 function Ql(e, t, r, n) {
   if (n)
@@ -3847,7 +3847,7 @@ function Ql(e, t, r, n) {
     if (s === "IMG" || s === "VIDEO" || s === "CANVAS" || s === "SOURCE")
       return !1;
   }
-  return Es(t) && de(r) ? !1 : t in e;
+  return Es(t) && fe(r) ? !1 : t in e;
 }
 const Zr = (e) => {
   const t = e.props["onUpdate:modelValue"] || !1;
@@ -3951,7 +3951,7 @@ function sc(e) {
     return "mathml";
 }
 function oc(e) {
-  return de(e) ? document.querySelector(e) : e;
+  return fe(e) ? document.querySelector(e) : e;
 }
 /*!
  * pinia v3.0.4
@@ -4032,10 +4032,10 @@ function dc(e, t, r, n) {
   function u() {
     a || (r.state.value[e] = s ? s() : {});
     const c = va(r.state.value[e]);
-    return ft(c, o, Object.keys(i || {}).reduce((d, g) => (d[g] = Dn(fe(() => {
+    return ft(c, o, Object.keys(i || {}).reduce((d, b) => (d[b] = Dn(de(() => {
       an(r);
-      const v = r._s.get(e);
-      return i[g].call(v, v);
+      const x = r._s.get(e);
+      return i[b].call(x, x);
     })), d), {}));
   }
   return l = yi(e, u, t, r, n, !0), l;
@@ -4043,28 +4043,28 @@ function dc(e, t, r, n) {
 function yi(e, t, r = {}, n, s, o) {
   let i;
   const a = ft({ actions: {} }, r), l = { deep: !0 };
-  let u, c, d = /* @__PURE__ */ new Set(), g = /* @__PURE__ */ new Set(), v;
+  let u, c, d = /* @__PURE__ */ new Set(), b = /* @__PURE__ */ new Set(), x;
   const k = n.state.value[e];
   !o && !k && (n.state.value[e] = {}), te({});
-  let h;
-  function V(H) {
+  let v;
+  function S(H) {
     let F;
     u = c = !1, typeof H == "function" ? (H(n.state.value[e]), F = {
       type: ur.patchFunction,
       storeId: e,
-      events: v
+      events: x
     }) : (Nn(n.state.value[e], H), F = {
       type: ur.patchObject,
       payload: H,
       storeId: e,
-      events: v
+      events: x
     });
-    const Q = h = Symbol();
+    const Q = v = Symbol();
     Yn().then(() => {
-      h === Q && (u = !0);
+      v === Q && (u = !0);
     }), c = !0, Et(d, F, n.state.value[e]);
   }
-  const p = o ? function() {
+  const g = o ? function() {
     const { state: F } = r, Q = F ? F() : {};
     this.$patch((ce) => {
       ft(ce, Q);
@@ -4073,10 +4073,10 @@ function yi(e, t, r = {}, n, s, o) {
     /* istanbul ignore next */
     xi
   );
-  function x() {
-    i.stop(), d.clear(), g.clear(), n._s.delete(e);
+  function h() {
+    i.stop(), d.clear(), b.clear(), n._s.delete(e);
   }
-  const E = (H, F = "") => {
+  const N = (H, F = "") => {
     if (Js in H)
       return H[vn] = F, H;
     const Q = function() {
@@ -4088,7 +4088,7 @@ function yi(e, t, r = {}, n, s, o) {
       function Fe(U) {
         ve.add(U);
       }
-      Et(g, {
+      Et(b, {
         args: ce,
         name: Q[vn],
         store: W,
@@ -4108,36 +4108,36 @@ function yi(e, t, r = {}, n, s, o) {
     _p: n,
     // _s: scope,
     $id: e,
-    $onAction: Ws.bind(null, g),
-    $patch: V,
-    $reset: p,
+    $onAction: Ws.bind(null, b),
+    $patch: S,
+    $reset: g,
     $subscribe(H, F = {}) {
       const Q = Ws(d, H, F.detached, () => ce()), ce = i.run(() => Ae(() => n.state.value[e], (pe) => {
         (F.flush === "sync" ? c : u) && H({
           storeId: e,
           type: ur.direct,
-          events: v
+          events: x
         }, pe);
       }, ft({}, l, F)));
       return Q;
     },
-    $dispose: x
+    $dispose: h
   }, W = Gt(q);
   n._s.set(e, W);
-  const Y = (n._a && n._a.runWithContext || ac)(() => n._e.run(() => (i = xo()).run(() => t({ action: E }))));
+  const Y = (n._a && n._a.runWithContext || ac)(() => n._e.run(() => (i = xo()).run(() => t({ action: N }))));
   for (const H in Y) {
     const F = Y[H];
     if (ue(F) && !uc(F) || ht(F))
       o || (k && cc(F) && (ue(F) ? F.value = k[H] : Nn(F, k[H])), n.state.value[e][H] = F);
     else if (typeof F == "function") {
-      const Q = E(F, H);
+      const Q = N(F, H);
       Y[H] = Q, a.actions[H] = F;
     }
   }
   return ft(W, Y), ft(D(W), Y), Object.defineProperty(W, "$state", {
     get: () => n.state.value[e],
     set: (H) => {
-      V((F) => {
+      S((F) => {
         ft(F, H);
       });
     }
@@ -4282,8 +4282,8 @@ function ji(e, t = "", r = "", n = [], s) {
     const o = /{([^}]*)}/g, i = e.trim();
     if (it(i, o)) {
       const a = i.replaceAll(o, (c) => {
-        const g = c.replace(/{|}/g, "").split(".").filter((v) => !n.some((k) => it(v, k)));
-        return `var(${Vi(r, Si(g.join("-")))}${le(s) ? `, ${s}` : ""})`;
+        const b = c.replace(/{|}/g, "").split(".").filter((x) => !n.some((k) => it(x, k)));
+        return `var(${Vi(r, Si(b.join("-")))}${le(s) ? `, ${s}` : ""})`;
       }), l = /(\d+\s+[\+\-\*\/]\s+\d+)/g, u = /var\([^)]+\)/g;
       return it(a.replace(u, "0"), l) ? `calc(${a})` : a;
     }
@@ -4306,13 +4306,13 @@ var fr = (...e) => Rc(ke.getTheme(), ...e), Rc = (e = {}, t, r, n) => {
 };
 function Tc(e, t = {}) {
   const r = ke.defaults.variable, { prefix: n = r.prefix, selector: s = r.selector, excludedKeyRegex: o = r.excludedKeyRegex } = t, i = (u, c = "") => Object.entries(u).reduce(
-    (d, [g, v]) => {
-      const k = it(g, o) ? On(c) : On(c, Si(g)), h = wc(v);
-      if (Pt(h)) {
-        const { variables: V, tokens: p } = i(h, k);
-        Zs(d.tokens, p), Zs(d.variables, V);
+    (d, [b, x]) => {
+      const k = it(b, o) ? On(c) : On(c, Si(b)), v = wc(x);
+      if (Pt(v)) {
+        const { variables: S, tokens: g } = i(v, k);
+        Zs(d.tokens, g), Zs(d.variables, S);
       } else
-        d.tokens.push((n ? k.replace(`${n}-`, "") : k).replaceAll("-", ".")), Sc(d.variables, Vi(k), ji(h, k, n, [o]));
+        d.tokens.push((n ? k.replace(`${n}-`, "") : k).replaceAll("-", ".")), Sc(d.variables, Vi(k), ji(v, k, n, [o]));
       return d;
     },
     { variables: [], tokens: [] }
@@ -4370,43 +4370,43 @@ var Je = {
   },
   getCommon({ name: e = "", theme: t = {}, params: r, set: n, defaults: s }) {
     var o, i, a, l, u, c, d;
-    const { preset: g, options: v } = t;
-    let k, h, V, p, x, E, q;
-    if (le(g) && v.transform !== "strict") {
-      const { primitive: W, semantic: A, extend: Y } = g, H = A || {}, { colorScheme: F } = H, Q = tt(H, ["colorScheme"]), ce = Y || {}, { colorScheme: pe } = ce, ve = tt(ce, ["colorScheme"]), Ve = F || {}, { dark: Fe } = Ve, ee = tt(Ve, ["dark"]), U = pe || {}, { dark: B } = U, je = tt(U, ["dark"]), Pe = le(W) ? this._toVariables({ primitive: W }, v) : {}, me = le(Q) ? this._toVariables({ semantic: Q }, v) : {}, be = le(ee) ? this._toVariables({ light: ee }, v) : {}, yt = le(Fe) ? this._toVariables({ dark: Fe }, v) : {}, ut = le(ve) ? this._toVariables({ semantic: ve }, v) : {}, Sr = le(je) ? this._toVariables({ light: je }, v) : {}, dt = le(B) ? this._toVariables({ dark: B }, v) : {}, [Nt, Bt] = [(o = Pe.declarations) != null ? o : "", Pe.tokens], [Rr, kt] = [(i = me.declarations) != null ? i : "", me.tokens || []], [ss, f] = [(a = be.declarations) != null ? a : "", be.tokens || []], [b, y] = [(l = yt.declarations) != null ? l : "", yt.tokens || []], [R, w] = [(u = ut.declarations) != null ? u : "", ut.tokens || []], [z, N] = [(c = Sr.declarations) != null ? c : "", Sr.tokens || []], [L, P] = [(d = dt.declarations) != null ? d : "", dt.tokens || []];
-      k = this.transformCSS(e, Nt, "light", "variable", v, n, s), h = Bt;
-      const T = this.transformCSS(e, `${Rr}${ss}`, "light", "variable", v, n, s), J = this.transformCSS(e, `${b}`, "dark", "variable", v, n, s);
-      V = `${T}${J}`, p = [.../* @__PURE__ */ new Set([...kt, ...f, ...y])];
-      const O = this.transformCSS(e, `${R}${z}color-scheme:light`, "light", "variable", v, n, s), M = this.transformCSS(e, `${L}color-scheme:dark`, "dark", "variable", v, n, s);
-      x = `${O}${M}`, E = [.../* @__PURE__ */ new Set([...w, ...N, ...P])], q = Ct(g.css, { dt: fr });
+    const { preset: b, options: x } = t;
+    let k, v, S, g, h, N, q;
+    if (le(b) && x.transform !== "strict") {
+      const { primitive: W, semantic: A, extend: Y } = b, H = A || {}, { colorScheme: F } = H, Q = tt(H, ["colorScheme"]), ce = Y || {}, { colorScheme: pe } = ce, ve = tt(ce, ["colorScheme"]), Ve = F || {}, { dark: Fe } = Ve, ee = tt(Ve, ["dark"]), U = pe || {}, { dark: B } = U, je = tt(U, ["dark"]), Pe = le(W) ? this._toVariables({ primitive: W }, x) : {}, me = le(Q) ? this._toVariables({ semantic: Q }, x) : {}, be = le(ee) ? this._toVariables({ light: ee }, x) : {}, yt = le(Fe) ? this._toVariables({ dark: Fe }, x) : {}, ut = le(ve) ? this._toVariables({ semantic: ve }, x) : {}, Sr = le(je) ? this._toVariables({ light: je }, x) : {}, dt = le(B) ? this._toVariables({ dark: B }, x) : {}, [Nt, Bt] = [(o = Pe.declarations) != null ? o : "", Pe.tokens], [Rr, kt] = [(i = me.declarations) != null ? i : "", me.tokens || []], [ss, f] = [(a = be.declarations) != null ? a : "", be.tokens || []], [m, y] = [(l = yt.declarations) != null ? l : "", yt.tokens || []], [T, w] = [(u = ut.declarations) != null ? u : "", ut.tokens || []], [z, O] = [(c = Sr.declarations) != null ? c : "", Sr.tokens || []], [L, P] = [(d = dt.declarations) != null ? d : "", dt.tokens || []];
+      k = this.transformCSS(e, Nt, "light", "variable", x, n, s), v = Bt;
+      const C = this.transformCSS(e, `${Rr}${ss}`, "light", "variable", x, n, s), J = this.transformCSS(e, `${m}`, "dark", "variable", x, n, s);
+      S = `${C}${J}`, g = [.../* @__PURE__ */ new Set([...kt, ...f, ...y])];
+      const E = this.transformCSS(e, `${T}${z}color-scheme:light`, "light", "variable", x, n, s), M = this.transformCSS(e, `${L}color-scheme:dark`, "dark", "variable", x, n, s);
+      h = `${E}${M}`, N = [.../* @__PURE__ */ new Set([...w, ...O, ...P])], q = Ct(b.css, { dt: fr });
     }
     return {
       primitive: {
         css: k,
-        tokens: h
+        tokens: v
       },
       semantic: {
-        css: V,
-        tokens: p
+        css: S,
+        tokens: g
       },
       global: {
-        css: x,
-        tokens: E
+        css: h,
+        tokens: N
       },
       style: q
     };
   },
   getPreset({ name: e = "", preset: t = {}, options: r, params: n, set: s, defaults: o, selector: i }) {
     var a, l, u;
-    let c, d, g;
+    let c, d, b;
     if (le(t) && r.transform !== "strict") {
-      const v = e.replace("-directive", ""), k = t, { colorScheme: h, extend: V, css: p } = k, x = tt(k, ["colorScheme", "extend", "css"]), E = V || {}, { colorScheme: q } = E, W = tt(E, ["colorScheme"]), A = h || {}, { dark: Y } = A, H = tt(A, ["dark"]), F = q || {}, { dark: Q } = F, ce = tt(F, ["dark"]), pe = le(x) ? this._toVariables({ [v]: He(He({}, x), W) }, r) : {}, ve = le(H) ? this._toVariables({ [v]: He(He({}, H), ce) }, r) : {}, Ve = le(Y) ? this._toVariables({ [v]: He(He({}, Y), Q) }, r) : {}, [Fe, ee] = [(a = pe.declarations) != null ? a : "", pe.tokens || []], [U, B] = [(l = ve.declarations) != null ? l : "", ve.tokens || []], [je, Pe] = [(u = Ve.declarations) != null ? u : "", Ve.tokens || []], me = this.transformCSS(v, `${Fe}${U}`, "light", "variable", r, s, o, i), be = this.transformCSS(v, je, "dark", "variable", r, s, o, i);
-      c = `${me}${be}`, d = [.../* @__PURE__ */ new Set([...ee, ...B, ...Pe])], g = Ct(p, { dt: fr });
+      const x = e.replace("-directive", ""), k = t, { colorScheme: v, extend: S, css: g } = k, h = tt(k, ["colorScheme", "extend", "css"]), N = S || {}, { colorScheme: q } = N, W = tt(N, ["colorScheme"]), A = v || {}, { dark: Y } = A, H = tt(A, ["dark"]), F = q || {}, { dark: Q } = F, ce = tt(F, ["dark"]), pe = le(h) ? this._toVariables({ [x]: He(He({}, h), W) }, r) : {}, ve = le(H) ? this._toVariables({ [x]: He(He({}, H), ce) }, r) : {}, Ve = le(Y) ? this._toVariables({ [x]: He(He({}, Y), Q) }, r) : {}, [Fe, ee] = [(a = pe.declarations) != null ? a : "", pe.tokens || []], [U, B] = [(l = ve.declarations) != null ? l : "", ve.tokens || []], [je, Pe] = [(u = Ve.declarations) != null ? u : "", Ve.tokens || []], me = this.transformCSS(x, `${Fe}${U}`, "light", "variable", r, s, o, i), be = this.transformCSS(x, je, "dark", "variable", r, s, o, i);
+      c = `${me}${be}`, d = [.../* @__PURE__ */ new Set([...ee, ...B, ...Pe])], b = Ct(g, { dt: fr });
     }
     return {
       css: c,
       tokens: d,
-      style: g
+      style: b
     };
   },
   getPresetC({ name: e = "", theme: t = {}, params: r, set: n, defaults: s }) {
@@ -4434,15 +4434,15 @@ var Je = {
     const i = this.getCommon({ name: e, theme: t, params: r, set: s, defaults: o }), a = Object.entries(n).reduce((l, [u, c]) => l.push(`${u}="${c}"`) && l, []).join(" ");
     return Object.entries(i || {}).reduce((l, [u, c]) => {
       if (c != null && c.css) {
-        const d = dr(c == null ? void 0 : c.css), g = `${u}-variables`;
-        l.push(`<style type="text/css" data-primevue-style-id="${g}" ${a}>${d}</style>`);
+        const d = dr(c == null ? void 0 : c.css), b = `${u}-variables`;
+        l.push(`<style type="text/css" data-primevue-style-id="${b}" ${a}>${d}</style>`);
       }
       return l;
     }, []).join("");
   },
   getStyleSheet({ name: e = "", theme: t = {}, params: r, props: n = {}, set: s, defaults: o }) {
     var i;
-    const a = { name: e, theme: t, params: r, set: s, defaults: o }, l = (i = e.includes("-directive") ? this.getPresetD(a) : this.getPresetC(a)) == null ? void 0 : i.css, u = Object.entries(n).reduce((c, [d, g]) => c.push(`${d}="${g}"`) && c, []).join(" ");
+    const a = { name: e, theme: t, params: r, set: s, defaults: o }, l = (i = e.includes("-directive") ? this.getPresetD(a) : this.getPresetC(a)) == null ? void 0 : i.css, u = Object.entries(n).reduce((c, [d, b]) => c.push(`${d}="${b}"`) && c, []).join(" ");
     return l ? `<style type="text/css" data-primevue-style-id="${e}-variables" ${u}>${dr(l)}</style>` : "";
   },
   createTokens(e = {}, t, r = "", n = "", s = {}) {
@@ -4451,8 +4451,8 @@ var Je = {
       Pt(i) ? this.createTokens(i, t, a, l, s) : (s[a] || (s[a] = {
         paths: [],
         computed(u, c = {}) {
-          var d, g;
-          return this.paths.length === 1 ? (d = this.paths[0]) == null ? void 0 : d.computed(this.paths[0].scheme, c.binding) : u && u !== "none" ? (g = this.paths.find((v) => v.scheme === u)) == null ? void 0 : g.computed(u, c.binding) : this.paths.map((v) => v.computed(v.scheme, c[v.scheme]));
+          var d, b;
+          return this.paths.length === 1 ? (d = this.paths[0]) == null ? void 0 : d.computed(this.paths[0].scheme, c.binding) : u && u !== "none" ? (b = this.paths.find((x) => x.scheme === u)) == null ? void 0 : b.computed(u, c.binding) : this.paths.map((x) => x.computed(x.scheme, c[x.scheme]));
         }
       }), s[a].paths.push({
         path: l,
@@ -4460,20 +4460,20 @@ var Je = {
         scheme: l.includes("colorScheme.light") ? "light" : l.includes("colorScheme.dark") ? "dark" : "none",
         computed(u, c = {}) {
           const d = /{([^}]*)}/g;
-          let g = i;
+          let b = i;
           if (c.name = this.path, c.binding || (c.binding = {}), it(i, d)) {
-            const k = i.trim().replaceAll(d, (p) => {
-              var x;
-              const E = p.replace(/{|}/g, ""), q = (x = s[E]) == null ? void 0 : x.computed(u, c);
+            const k = i.trim().replaceAll(d, (g) => {
+              var h;
+              const N = g.replace(/{|}/g, ""), q = (h = s[N]) == null ? void 0 : h.computed(u, c);
               return wi(q) && q.length === 2 ? `light-dark(${q[0].value},${q[1].value})` : q == null ? void 0 : q.value;
-            }), h = /(\d+\w*\s+[\+\-\*\/]\s+\d+\w*)/g, V = /var\([^)]+\)/g;
-            g = it(k.replace(V, "0"), h) ? `calc(${k})` : k;
+            }), v = /(\d+\w*\s+[\+\-\*\/]\s+\d+\w*)/g, S = /var\([^)]+\)/g;
+            b = it(k.replace(S, "0"), v) ? `calc(${k})` : k;
           }
           return rs(c.binding) && delete c.binding, {
             colorScheme: u,
             path: this.path,
             paths: c,
-            value: g.includes("undefined") ? void 0 : g
+            value: b.includes("undefined") ? void 0 : b
           };
         }
       }));
@@ -4483,8 +4483,8 @@ var Je = {
     var n;
     const o = ((l) => l.split(".").filter((c) => !it(c.toLowerCase(), r.variable.excludedKeyRegex)).join("."))(t), i = t.includes("colorScheme.light") ? "light" : t.includes("colorScheme.dark") ? "dark" : void 0, a = [(n = e[o]) == null ? void 0 : n.computed(i)].flat().filter((l) => l);
     return a.length === 1 ? a[0].value : a.reduce((l = {}, u) => {
-      const c = u, { colorScheme: d } = c, g = tt(c, ["colorScheme"]);
-      return l[d] = g, l;
+      const c = u, { colorScheme: d } = c, b = tt(c, ["colorScheme"]);
+      return l[d] = b, l;
     }, void 0);
   },
   getSelectorRule(e, t, r, n) {
@@ -4495,7 +4495,7 @@ var Je = {
       const { cssLayer: l } = s;
       if (n !== "style") {
         const u = this.getColorSchemeOption(s, i);
-        t = r === "dark" ? u.reduce((c, { type: d, selector: g }) => (le(g) && (c += g.includes("[CSS]") ? g.replace("[CSS]", t) : this.getSelectorRule(g, a, d, t)), c), "") : Mt(a ?? ":root", t);
+        t = r === "dark" ? u.reduce((c, { type: d, selector: b }) => (le(b) && (c += b.includes("[CSS]") ? b.replace("[CSS]", t) : this.getSelectorRule(b, a, d, t)), c), "") : Mt(a ?? ":root", t);
       }
       if (l) {
         const u = {
@@ -4638,8 +4638,8 @@ function En(e, t = {}) {
           if (c === "string" || c === "number")
             l.push(u);
           else if (c === "object") {
-            const d = Array.isArray(u) ? r(n, u) : Object.entries(u).map(([g, v]) => n === "style" && (v || v === 0) ? `${g.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()}:${v}` : v ? g : void 0);
-            l = d.length ? l.concat(d.filter((g) => !!g)) : l;
+            const d = Array.isArray(u) ? r(n, u) : Object.entries(u).map(([b, x]) => n === "style" && (x || x === 0) ? `${b.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()}:${x}` : x ? b : void 0);
+            l = d.length ? l.concat(d.filter((b) => !!b)) : l;
           }
         }
         return l;
@@ -4737,15 +4737,15 @@ function Oc(e) {
 }
 var Ec = 0;
 function Ic(e) {
-  var t = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : {}, r = te(!1), n = te(e), s = te(null), o = jc() ? window.document : void 0, i = t.document, a = i === void 0 ? o : i, l = t.immediate, u = l === void 0 ? !0 : l, c = t.manual, d = c === void 0 ? !1 : c, g = t.name, v = g === void 0 ? "style_".concat(++Ec) : g, k = t.id, h = k === void 0 ? void 0 : k, V = t.media, p = V === void 0 ? void 0 : V, x = t.nonce, E = x === void 0 ? void 0 : x, q = t.first, W = q === void 0 ? !1 : q, A = t.onMounted, Y = A === void 0 ? void 0 : A, H = t.onUpdated, F = H === void 0 ? void 0 : H, Q = t.onLoad, ce = Q === void 0 ? void 0 : Q, pe = t.props, ve = pe === void 0 ? {} : pe, Ve = function() {
+  var t = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : {}, r = te(!1), n = te(e), s = te(null), o = jc() ? window.document : void 0, i = t.document, a = i === void 0 ? o : i, l = t.immediate, u = l === void 0 ? !0 : l, c = t.manual, d = c === void 0 ? !1 : c, b = t.name, x = b === void 0 ? "style_".concat(++Ec) : b, k = t.id, v = k === void 0 ? void 0 : k, S = t.media, g = S === void 0 ? void 0 : S, h = t.nonce, N = h === void 0 ? void 0 : h, q = t.first, W = q === void 0 ? !1 : q, A = t.onMounted, Y = A === void 0 ? void 0 : A, H = t.onUpdated, F = H === void 0 ? void 0 : H, Q = t.onLoad, ce = Q === void 0 ? void 0 : Q, pe = t.props, ve = pe === void 0 ? {} : pe, Ve = function() {
   }, Fe = function(B) {
     var je = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : {};
     if (a) {
-      var Pe = Ds(Ds({}, ve), je), me = Pe.name || v, be = Pe.id || h, yt = Pe.nonce || E;
+      var Pe = Ds(Ds({}, ve), je), me = Pe.name || x, be = Pe.id || v, yt = Pe.nonce || N;
       s.value = a.querySelector('style[data-primevue-style-id="'.concat(me, '"]')) || a.getElementById(be) || a.createElement("style"), s.value.isConnected || (n.value = B || e, En(s.value, {
         type: "text/css",
         id: be,
-        media: p,
+        media: g,
         nonce: yt
       }), W ? a.head.prepend(s.value) : a.head.appendChild(s.value), Pc(s.value, "data-primevue-style-id", me), En(s.value, Pe), s.value.onload = function(ut) {
         return ce == null ? void 0 : ce(ut, {
@@ -4761,8 +4761,8 @@ function Ic(e) {
     !a || !r.value || (Ve(), Vc(s.value) && a.head.removeChild(s.value), r.value = !1);
   };
   return u && !d && Oc(Fe), {
-    id: h,
-    name: v,
+    id: v,
+    name: x,
     el: s,
     css: n,
     unload: ee,
@@ -5067,8 +5067,8 @@ var Uc = function(t) {
       var s = this.name === "base" ? "global-style" : "".concat(this.name, "-style"), o = Ct(this.theme, {
         dt: fr
       }), i = dr(ke.transformCSS(s, o)), a = Object.entries(r).reduce(function(l, u) {
-        var c = Ys(u, 2), d = c[0], g = c[1];
-        return l.push("".concat(d, '="').concat(g, '"')) && l;
+        var c = Ys(u, 2), d = c[0], b = c[1];
+        return l.push("".concat(d, '="').concat(b, '"')) && l;
       }, []).join(" ");
       le(i) && n.push('<style type="text/css" data-primevue-style-id="'.concat(s, '" ').concat(a, ">").concat(i, "</style>"));
     }
@@ -5290,18 +5290,18 @@ function tu(e, t) {
   var r = te(!1), n = function() {
     var u;
     if (((u = t.config) === null || u === void 0 ? void 0 : u.theme) !== "none" && !ke.isStyleNameLoaded("common")) {
-      var c, d, g = ((c = It.getCommonTheme) === null || c === void 0 ? void 0 : c.call(It)) || {}, v = g.primitive, k = g.semantic, h = g.global, V = g.style, p = {
+      var c, d, b = ((c = It.getCommonTheme) === null || c === void 0 ? void 0 : c.call(It)) || {}, x = b.primitive, k = b.semantic, v = b.global, S = b.style, g = {
         nonce: (d = t.config) === null || d === void 0 || (d = d.csp) === null || d === void 0 ? void 0 : d.nonce
       };
-      It.load(v == null ? void 0 : v.css, qr({
+      It.load(x == null ? void 0 : x.css, qr({
         name: "primitive-variables"
-      }, p)), It.load(k == null ? void 0 : k.css, qr({
+      }, g)), It.load(k == null ? void 0 : k.css, qr({
         name: "semantic-variables"
-      }, p)), It.load(h == null ? void 0 : h.css, qr({
+      }, g)), It.load(v == null ? void 0 : v.css, qr({
         name: "global-variables"
-      }, p)), It.loadTheme(qr({
+      }, g)), It.loadTheme(qr({
         name: "global-style"
-      }, p), V), ke.setLoadedStyleName("common");
+      }, g), S), ke.setLoadedStyleName("common");
     }
   };
   nt.on("theme:change", function(l) {
@@ -13078,71 +13078,71 @@ const nu = {
   inplace: Mu,
   progressspinner: ld
 }, ns = /* @__PURE__ */ ki("attacks", () => {
-  const e = te([]), t = te(null), r = fe(
-    () => e.value.find((h) => h.sessionId === t.value) ?? e.value[0] ?? null
+  const e = te([]), t = te(null), r = de(
+    () => e.value.find((v) => v.sessionId === t.value) ?? e.value[0] ?? null
   );
-  function n(h, V, p = 0) {
-    const x = e.value.find((q) => q.sessionId === h);
-    if (x) {
-      p > 0 && (x.total = p);
+  function n(v, S, g = 0) {
+    const h = e.value.find((q) => q.sessionId === v);
+    if (h) {
+      g > 0 && (h.total = g);
       return;
     }
-    const E = {
-      sessionId: h,
-      requestId: V,
+    const N = {
+      sessionId: v,
+      requestId: S,
       startedAt: Date.now(),
       results: [],
-      total: p,
+      total: g,
       complete: !1,
       errors: [],
       recoveredKeys: [],
       discoveredEndpoints: [],
       keyRecoveryLog: []
     };
-    e.value.unshift(E), t.value = h;
+    e.value.unshift(N), t.value = v;
   }
-  function s(h, V) {
-    const p = e.value.find((x) => x.sessionId === h);
-    p && (p.total = V);
+  function s(v, S) {
+    const g = e.value.find((h) => h.sessionId === v);
+    g && (g.total = S);
   }
-  function o(h, V) {
-    const p = e.value.find((E) => E.sessionId === h);
-    if (!p) return;
-    const x = p.results.findIndex((E) => E.id === V.id);
-    x >= 0 ? p.results[x] = V : p.results.push(V);
+  function o(v, S) {
+    const g = e.value.find((N) => N.sessionId === v);
+    if (!g) return;
+    const h = g.results.findIndex((N) => N.id === S.id);
+    h >= 0 ? g.results[h] = S : g.results.push(S);
   }
-  function i(h, V) {
-    const p = e.value.find((x) => x.sessionId === h);
-    p && (p.complete = !0, p.errors.push(...V));
+  function i(v, S) {
+    const g = e.value.find((h) => h.sessionId === v);
+    g && (g.complete = !0, g.errors.push(...S));
   }
-  function a(h, V) {
-    const p = e.value.find((x) => x.sessionId === h);
-    p && !p.recoveredKeys.includes(V) && p.recoveredKeys.push(V);
+  function a(v, S) {
+    const g = e.value.find((h) => h.sessionId === v);
+    g && !g.recoveredKeys.includes(S) && g.recoveredKeys.push(S);
   }
-  function l(h, V) {
-    const p = e.value.find((x) => x.sessionId === h);
-    p && p.keyRecoveryLog.push(V);
+  function l(v, S) {
+    const g = e.value.find((h) => h.sessionId === v);
+    g && g.keyRecoveryLog.push(S);
   }
-  function u(h, V) {
-    const p = e.value.find((x) => x.sessionId === h);
-    p && !p.discoveredEndpoints.some((x) => x.url === V.url) && p.discoveredEndpoints.push(V);
+  function u(v, S) {
+    const g = e.value.find((h) => h.sessionId === v);
+    g && !g.discoveredEndpoints.some((h) => h.url === S.url) && g.discoveredEndpoints.push(S);
   }
-  function c(h, V) {
-    const p = e.value.find((x) => x.sessionId === h);
-    p && (p.spoof = V);
+  function c(v, S) {
+    const g = e.value.find((h) => h.sessionId === v);
+    g && (g.spoof = S);
   }
-  function d(h, V, p) {
-    var E;
-    const x = e.value.find((q) => q.sessionId === h);
-    x && (x.recovery = { candidates: V, originalJWT: p, keys: ((E = x.recovery) == null ? void 0 : E.keys) ?? [] });
+  function d(v, S, g) {
+    var N;
+    const h = e.value.find((q) => q.sessionId === v);
+    h && (h.recovery = { candidates: S, originalJWT: g, keys: ((N = h.recovery) == null ? void 0 : N.keys) ?? [] });
   }
-  function g(h, V) {
-    var x, E;
-    const p = e.value.find((q) => q.sessionId === h);
-    p && (p.recovery = { candidates: ((x = p.recovery) == null ? void 0 : x.candidates) ?? [], originalJWT: ((E = p.recovery) == null ? void 0 : E.originalJWT) ?? "", keys: V });
+  function b(v, S) {
+    var h, N;
+    const g = e.value.find((q) => q.sessionId === v);
+    g && (g.recovery = { candidates: ((h = g.recovery) == null ? void 0 : h.candidates) ?? [], originalJWT: ((N = g.recovery) == null ? void 0 : N.originalJWT) ?? "", keys: S });
   }
-  function v(h) {
-    t.value = h;
+  function x(v) {
+    t.value = v;
   }
   function k() {
     e.value = [], t.value = null;
@@ -13160,8 +13160,8 @@ const nu = {
     addDiscoveredEndpoint: u,
     setSpoof: c,
     setRecoveryCandidates: d,
-    setRecoveredKeys: g,
-    setActiveSession: v,
+    setRecoveredKeys: b,
+    setActiveSession: x,
     clearSessions: k
   };
 }), Bd = [
@@ -13290,12 +13290,17 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
   },
   emits: ["select", "selectEndpoint", "selectSpoof", "selectRecovery"],
   setup(e, { emit: t }) {
-    const r = t, n = ns(), s = te("all"), o = fe(() => n.activeSession), i = fe(() => {
-      var c;
-      const u = (c = o.value) == null ? void 0 : c.spoof;
-      switch (u == null ? void 0 : u.verifyStatus) {
+    const r = t, n = ns(), s = te("all"), o = de(() => n.activeSession), i = de(() => {
+      var d;
+      return (((d = o.value) == null ? void 0 : d.keyRecoveryLog) ?? []).filter(
+        (b) => !b.startsWith("e=") && !b.startsWith("[scan]") && !b.startsWith("candidate ") && !b.startsWith("Recovering ") && !b.startsWith("Skipping pair")
+      ).map((b) => b.startsWith("Algorithm confusion: probing ") ? "Algorithm confusion: probing for exposed JWKS & certificate key endpoints…" : b.startsWith("Algorithm confusion: no exposed JWKS/cert endpoints found") ? "Algorithm confusion: no exposed JWKS/cert endpoints found." : b);
+    }), a = de(() => {
+      var d;
+      const c = (d = o.value) == null ? void 0 : d.spoof;
+      switch (c == null ? void 0 : c.verifyStatus) {
         case "verified":
-          return { icon: "✓", text: `endpoint verified${u.selfVerified ? "" : " (⚠ signing check failed)"}`, cls: "bg-green-950 border-green-800 text-green-300 hover:bg-green-900" };
+          return { icon: "✓", text: `endpoint verified${c.selfVerified ? "" : " (⚠ signing check failed)"}`, cls: "bg-green-950 border-green-800 text-green-300 hover:bg-green-900" };
         case "mismatch":
           return { icon: "✗", text: "hosted JWKS does not match — re-host it", cls: "bg-red-950 border-red-800 text-red-300 hover:bg-red-900" };
         case "unreachable":
@@ -13303,75 +13308,75 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
         default:
           return { icon: "ℹ", text: "no JWKS URL configured", cls: "bg-purple-950 border-purple-800 text-purple-300 hover:bg-purple-900" };
       }
-    }), a = fe(() => {
-      var k;
-      const u = ((k = o.value) == null ? void 0 : k.results) ?? [], c = u.filter((h) => h.responseStatus && h.responseStatus < 300).length, d = u.filter((h) => h.responseStatus && h.responseStatus >= 400 && h.responseStatus < 500).length, g = u.filter((h) => h.responseStatus && h.responseStatus >= 500).length, v = u.filter((h) => h.error).length;
+    }), l = de(() => {
+      var v;
+      const c = ((v = o.value) == null ? void 0 : v.results) ?? [], d = c.filter((S) => S.responseStatus && S.responseStatus < 300).length, b = c.filter((S) => S.responseStatus && S.responseStatus >= 400 && S.responseStatus < 500).length, x = c.filter((S) => S.responseStatus && S.responseStatus >= 500).length, k = c.filter((S) => S.error).length;
       return [
-        { key: "all", label: "All", count: u.length },
-        { key: "2xx", label: "2xx", count: c },
-        { key: "4xx", label: "4xx", count: d },
-        { key: "5xx", label: "5xx", count: g },
-        { key: "err", label: "Errors", count: v }
+        { key: "all", label: "All", count: c.length },
+        { key: "2xx", label: "2xx", count: d },
+        { key: "4xx", label: "4xx", count: b },
+        { key: "5xx", label: "5xx", count: x },
+        { key: "err", label: "Errors", count: k }
       ];
-    }), l = fe(() => {
-      var c;
-      const u = ((c = o.value) == null ? void 0 : c.results) ?? [];
+    }), u = de(() => {
+      var d;
+      const c = ((d = o.value) == null ? void 0 : d.results) ?? [];
       switch (s.value) {
         case "2xx":
-          return u.filter((d) => d.responseStatus && d.responseStatus < 300);
+          return c.filter((b) => b.responseStatus && b.responseStatus < 300);
         case "4xx":
-          return u.filter((d) => d.responseStatus && d.responseStatus >= 400 && d.responseStatus < 500);
+          return c.filter((b) => b.responseStatus && b.responseStatus >= 400 && b.responseStatus < 500);
         case "5xx":
-          return u.filter((d) => d.responseStatus && d.responseStatus >= 500);
+          return c.filter((b) => b.responseStatus && b.responseStatus >= 500);
         case "err":
-          return u.filter((d) => d.error);
+          return c.filter((b) => b.error);
         default:
-          return u;
+          return c;
       }
     });
-    return (u, c) => {
-      var d, g, v, k, h, V;
-      return C(), j("div", Yd, [
+    return (c, d) => {
+      var b, x, k, v, S, g;
+      return V(), j("div", Yd, [
         I(" Session selector + progress bar "),
-        m("div", Ad, [
-          we(n).sessions.length > 1 ? (C(), j("select", {
+        p("div", Ad, [
+          we(n).sessions.length > 1 ? (V(), j("select", {
             key: 0,
             value: we(n).activeSessionId,
-            onChange: c[0] || (c[0] = (p) => we(n).setActiveSession(p.target.value)),
+            onChange: d[0] || (d[0] = (h) => we(n).setActiveSession(h.target.value)),
             class: "text-xs bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-300 flex-1 min-w-0"
           }, [
-            (C(!0), j(
+            (V(!0), j(
               ie,
               null,
-              Ee(we(n).sessions, (p) => (C(), j("option", {
-                key: p.sessionId,
-                value: p.sessionId
-              }, " Session " + S(p.sessionId.slice(0, 6)) + " — " + S(p.results.length) + "/" + S(p.total) + " (" + S(new Date(p.startedAt).toLocaleTimeString()) + ") ", 9, _d))),
+              Ee(we(n).sessions, (h) => (V(), j("option", {
+                key: h.sessionId,
+                value: h.sessionId
+              }, " Session " + R(h.sessionId.slice(0, 6)) + " — " + R(h.results.length) + "/" + R(h.total) + " (" + R(new Date(h.startedAt).toLocaleTimeString()) + ") ", 9, _d))),
               128
               /* KEYED_FRAGMENT */
             ))
-          ], 40, Qd)) : (C(), j("span", $d, [
-            o.value ? (C(), j(
+          ], 40, Qd)) : (V(), j("span", $d, [
+            o.value ? (V(), j(
               ie,
               { key: 0 },
               [
                 ne(
-                  S(o.value.results.length) + "/" + S(o.value.total) + " attacks ",
+                  R(o.value.results.length) + "/" + R(o.value.total) + " attacks ",
                   1
                   /* TEXT */
                 ),
-                o.value.complete ? (C(), j("span", tf, "✓ complete")) : (C(), j("span", ef, "running…")),
-                o.value.discoveredEndpoints.length ? (C(), j(
+                o.value.complete ? (V(), j("span", tf, "✓ complete")) : (V(), j("span", ef, "running…")),
+                o.value.discoveredEndpoints.length ? (V(), j(
                   "span",
                   rf,
-                  "🔎 " + S(o.value.discoveredEndpoints.length) + " key endpoint(s)",
+                  "🔎 " + R(o.value.discoveredEndpoints.length) + " key endpoint(s)",
                   1
                   /* TEXT */
                 )) : I("v-if", !0)
               ],
               64
               /* STABLE_FRAGMENT */
-            )) : (C(), j(
+            )) : (V(), j(
               ie,
               { key: 1 },
               [
@@ -13381,48 +13386,48 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
               /* STABLE_FRAGMENT */
             ))
           ])),
-          we(n).sessions.length ? (C(), j("button", {
+          we(n).sessions.length ? (V(), j("button", {
             key: 2,
-            onClick: c[1] || (c[1] = (p) => we(n).clearSessions()),
+            onClick: d[1] || (d[1] = (h) => we(n).clearSessions()),
             class: "text-xs text-gray-500 hover:text-red-400 transition-colors"
           }, "Clear")) : I("v-if", !0)
         ]),
         I(" Discovered JWKS / key endpoints — highlighted so the analyst can't miss it "),
-        (d = o.value) != null && d.discoveredEndpoints.length ? (C(), j("div", nf, [
-          m(
+        (b = o.value) != null && b.discoveredEndpoints.length ? (V(), j("div", nf, [
+          p(
             "p",
             sf,
-            "🔎 " + S(o.value.discoveredEndpoints.length) + " key endpoint(s) discovered — click for details:",
+            "🔎 " + R(o.value.discoveredEndpoints.length) + " key endpoint(s) discovered — click for details:",
             1
             /* TEXT */
           ),
-          (C(!0), j(
+          (V(!0), j(
             ie,
             null,
-            Ee(o.value.discoveredEndpoints, (p, x) => (C(), j("div", {
-              key: x,
-              onClick: (E) => r("selectEndpoint", p),
+            Ee(o.value.discoveredEndpoints, (h, N) => (V(), j("div", {
+              key: N,
+              onClick: (q) => r("selectEndpoint", h),
               class: he([
                 "font-mono break-all leading-snug px-1 -mx-1 rounded cursor-pointer hover:bg-cyan-900 transition-colors",
-                e.selectedEndpointUrl === p.url ? "bg-cyan-900 ring-1 ring-cyan-500" : ""
+                e.selectedEndpointUrl === h.url ? "bg-cyan-900 ring-1 ring-cyan-500" : ""
               ])
             }, [
-              m(
+              p(
                 "span",
                 af,
-                "[" + S(p.source) + "]",
+                "[" + R(h.source) + "]",
                 1
                 /* TEXT */
               ),
               ne(
-                " " + S(p.url) + " ",
+                " " + R(h.url) + " ",
                 1
                 /* TEXT */
               ),
-              p.keyCount ? (C(), j(
+              h.keyCount ? (V(), j(
                 "span",
                 lf,
-                "— " + S(p.keyCount) + " key(s)",
+                "— " + R(h.keyCount) + " key(s)",
                 1
                 /* TEXT */
               )) : I("v-if", !0)
@@ -13432,8 +13437,8 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
           ))
         ])) : I("v-if", !0),
         I(" Progress bar "),
-        o.value && !o.value.complete ? (C(), j("div", cf, [
-          m(
+        o.value && !o.value.complete ? (V(), j("div", cf, [
+          p(
             "div",
             {
               class: "h-1 bg-blue-500 transition-all duration-300",
@@ -13445,24 +13450,24 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
           )
         ])) : I("v-if", !0),
         I(" Errors / warnings "),
-        (g = o.value) != null && g.errors.length ? (C(), j("div", uf, [
-          m(
+        (x = o.value) != null && x.errors.length ? (V(), j("div", uf, [
+          p(
             "p",
             df,
-            "⚠ " + S(o.value.errors.length) + " error(s):",
+            "⚠ " + R(o.value.errors.length) + " error(s):",
             1
             /* TEXT */
           ),
-          (C(!0), j(
+          (V(!0), j(
             ie,
             null,
-            Ee(o.value.errors, (p, x) => (C(), j(
+            Ee(o.value.errors, (h, N) => (V(), j(
               "p",
               {
-                key: x,
+                key: N,
                 class: "font-mono break-all"
               },
-              S(p),
+              R(h),
               1
               /* TEXT */
             ))),
@@ -13471,47 +13476,47 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
           ))
         ])) : I("v-if", !0),
         I(" Key recovery / discovery log (click → right pane) "),
-        (v = o.value) != null && v.keyRecoveryLog.length ? (C(), j(
+        (k = o.value) != null && k.keyRecoveryLog.length ? (V(), j(
           "div",
           {
             key: 3,
-            onClick: c[2] || (c[2] = (p) => r("selectRecovery")),
+            onClick: d[2] || (d[2] = (h) => r("selectRecovery")),
             class: he([
               "px-3 py-1.5 border-b text-xs max-h-40 overflow-y-auto cursor-pointer transition-colors",
-              (k = o.value.recovery) != null && k.keys.length ? "bg-green-950 border-green-800 text-green-300" : "bg-yellow-950 border-yellow-800 text-yellow-300",
+              (v = o.value.recovery) != null && v.keys.length ? "bg-green-950 border-green-800 text-green-300" : "bg-yellow-950 border-yellow-800 text-yellow-300",
               e.selectedRecovery ? "ring-1 ring-inset ring-current" : ""
             ])
           },
           [
-            m("p", ff, [
-              c[4] || (c[4] = ne(
+            p("p", ff, [
+              d[4] || (d[4] = ne(
                 " 🔑 Key discovery / recovery ",
                 -1
                 /* CACHED */
               )),
-              (h = o.value.recovery) != null && h.keys.length ? (C(), j(
+              (S = o.value.recovery) != null && S.keys.length ? (V(), j(
                 "span",
                 pf,
-                "— ✓ " + S(o.value.recovery.keys.length) + " key(s) recovered",
+                "— ✓ " + R(o.value.recovery.keys.length) + " key(s) recovered",
                 1
                 /* TEXT */
               )) : I("v-if", !0),
-              c[5] || (c[5] = ne(
+              d[5] || (d[5] = ne(
                 " · click for details & jwt_tool repro ",
                 -1
                 /* CACHED */
               ))
             ]),
-            (C(!0), j(
+            (V(!0), j(
               ie,
               null,
-              Ee(o.value.keyRecoveryLog, (p, x) => (C(), j(
+              Ee(i.value, (h, N) => (V(), j(
                 "p",
                 {
-                  key: x,
+                  key: N,
                   class: "break-all leading-snug"
                 },
-                S(p),
+                R(h),
                 1
                 /* TEXT */
               ))),
@@ -13523,42 +13528,42 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
           /* CLASS */
         )) : I("v-if", !0),
         I(" JKU/X5U spoofing: endpoint check + JWKS to host (click → right pane) "),
-        (V = o.value) != null && V.spoof ? (C(), j(
+        (g = o.value) != null && g.spoof ? (V(), j(
           "div",
           {
             key: 4,
-            onClick: c[3] || (c[3] = (p) => r("selectSpoof", o.value.spoof)),
+            onClick: d[3] || (d[3] = (h) => r("selectSpoof", o.value.spoof)),
             class: he([
               "px-3 py-1.5 border-b text-xs cursor-pointer transition-colors",
-              i.value.cls,
+              a.value.cls,
               e.selectedSpoof ? "ring-1 ring-inset ring-current" : ""
             ])
           },
-          S(i.value.icon) + " JKU/X5U spoofing — " + S(i.value.text) + " · click to view JWKS to host ",
+          R(a.value.icon) + " JKU/X5U spoofing — " + R(a.value.text) + " · click to view JWKS to host ",
           3
           /* TEXT, CLASS */
         )) : I("v-if", !0),
         I(" Filter tabs "),
-        m("div", mf, [
-          (C(!0), j(
+        p("div", mf, [
+          (V(!0), j(
             ie,
             null,
-            Ee(a.value, (p) => (C(), j("button", {
-              key: p.key,
-              onClick: (x) => s.value = p.key,
+            Ee(l.value, (h) => (V(), j("button", {
+              key: h.key,
+              onClick: (N) => s.value = h.key,
               class: he([
                 "px-2 py-0.5 rounded text-xs font-medium transition-colors whitespace-nowrap",
-                s.value === p.key ? "bg-blue-700 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+                s.value === h.key ? "bg-blue-700 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-gray-700"
               ])
-            }, S(p.label) + " (" + S(p.count) + ") ", 11, bf))),
+            }, R(h.label) + " (" + R(h.count) + ") ", 11, bf))),
             128
             /* KEYED_FRAGMENT */
           ))
         ]),
         I(" Results list "),
-        m("div", hf, [
-          !o.value || l.value.length === 0 ? (C(), j("div", gf, [
-            o.value ? (C(), j(
+        p("div", hf, [
+          !o.value || u.value.length === 0 ? (V(), j("div", gf, [
+            o.value ? (V(), j(
               ie,
               { key: 1 },
               [
@@ -13566,7 +13571,7 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
               ],
               64
               /* STABLE_FRAGMENT */
-            )) : (C(), j(
+            )) : (V(), j(
               ie,
               { key: 0 },
               [
@@ -13576,49 +13581,49 @@ const Yd = { class: "h-full flex flex-col overflow-hidden" }, Ad = { class: "px-
               /* STABLE_FRAGMENT */
             ))
           ])) : I("v-if", !0),
-          (C(!0), j(
+          (V(!0), j(
             ie,
             null,
-            Ee(l.value, (p) => (C(), j("div", {
-              key: p.id,
-              onClick: (x) => r("select", p),
+            Ee(u.value, (h) => (V(), j("div", {
+              key: h.id,
+              onClick: (N) => r("select", h),
               class: he([
                 "px-3 py-2 border-b border-gray-800 cursor-pointer hover:bg-gray-800 transition-colors",
-                e.selectedId === p.id ? "bg-gray-800 border-l-2 border-l-blue-500" : ""
+                e.selectedId === h.id ? "bg-gray-800 border-l-2 border-l-blue-500" : ""
               ])
             }, [
-              m("div", xf, [
-                m(
+              p("div", xf, [
+                p(
                   "span",
                   {
-                    class: he(["px-1.5 py-0.5 rounded text-xs font-mono shrink-0", we(Li)(p.technique)])
+                    class: he(["px-1.5 py-0.5 rounded text-xs font-mono shrink-0", we(Li)(h.technique)])
                   },
-                  S(p.technique),
+                  R(h.technique),
                   3
                   /* TEXT, CLASS */
                 ),
-                m(
+                p(
                   "span",
                   yf,
-                  S(p.techniqueName),
+                  R(h.techniqueName),
                   1
                   /* TEXT */
                 ),
-                p.responseStatus ? (C(), j(
+                h.responseStatus ? (V(), j(
                   "span",
                   {
                     key: 0,
-                    class: he(["text-xs font-mono font-bold shrink-0", we(qi)(p.responseStatus)])
+                    class: he(["text-xs font-mono font-bold shrink-0", we(qi)(h.responseStatus)])
                   },
-                  S(p.responseStatus),
+                  R(h.responseStatus),
                   3
                   /* TEXT, CLASS */
-                )) : p.error ? (C(), j("span", kf, "ERR")) : p.infoOnly ? (C(), j("span", wf, "ℹ")) : (C(), j("span", zf, "…"))
+                )) : h.error ? (V(), j("span", kf, "ERR")) : h.infoOnly ? (V(), j("span", wf, "ℹ")) : (V(), j("span", zf, "…"))
               ]),
-              m(
+              p(
                 "p",
                 Sf,
-                S(p.description.slice(0, 80)),
+                R(h.description.slice(0, 80)),
                 1
                 /* TEXT */
               )
@@ -13701,93 +13706,93 @@ const Tf = {
     result: {}
   },
   setup(e) {
-    const t = e, r = te(!1), n = te(!1), s = te(!1), o = te(!1), i = fe(() => {
-      const p = t.result;
-      return !p || p.technique !== "weakSecret" || !p.originalJWT ? null : `hashcat -a 0 -m 16500 ${p.originalJWT} /path/to/jwt.secrets.list`;
+    const t = e, r = te(!1), n = te(!1), s = te(!1), o = te(!1), i = de(() => {
+      const g = t.result;
+      return !g || g.technique !== "weakSecret" || !g.originalJWT ? null : `hashcat -a 0 -m 16500 ${g.originalJWT} /path/to/jwt.secrets.list`;
     });
-    function a(p, x) {
-      const E = p.replace(/\r\n/g, `
+    function a(g, h) {
+      const N = g.replace(/\r\n/g, `
 `);
-      switch (x) {
+      switch (h) {
         case "PEM (no trailing LF)":
-          return btoa(E.replace(/\n+$/, ""));
+          return btoa(N.replace(/\n+$/, ""));
         case "base64(PEM)":
-          return btoa(btoa(E));
+          return btoa(btoa(N));
         case "DER":
-          return E.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+          return N.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
         case "PEM":
         default:
-          return btoa(E);
+          return btoa(N);
       }
     }
-    function l(p) {
+    function l(g) {
       try {
-        return JSON.parse(kn(p));
+        return JSON.parse(kn(g));
       } catch {
         return null;
       }
     }
-    const u = fe(() => {
-      const p = t.result;
-      if (!p || !p.originalJWT || p.infoOnly) return null;
-      const x = "python3 jwt_tool.py", E = `'${p.originalJWT}'`, q = l(p.modifiedJWT.split(".")[0] ?? "") ?? {};
-      switch (p.technique) {
+    const u = de(() => {
+      const g = t.result;
+      if (!g || !g.originalJWT || g.infoOnly) return null;
+      const h = "python3 jwt_tool.py", N = `'${g.originalJWT}'`, q = l(g.modifiedJWT.split(".")[0] ?? "") ?? {};
+      switch (g.technique) {
         case "algConfusion":
-          return p.keyPem ? {
-            cmd: `echo -n '${a(p.keyPem, p.secretEncoding ?? "PEM")}' | base64 -d > /tmp/jwt_pubkey
-${x} ${E} -X k -pk /tmp/jwt_pubkey`,
-            note: `Byte-exact. Writes the precise HMAC secret (${p.secretEncoding}) to a file, then forges the same token.` + (p.secretEncoding === "DER" ? " Note: DER is raw binary; jwt_tool reads the key file as text and may fail on it." : "")
+          return g.keyPem ? {
+            cmd: `echo -n '${a(g.keyPem, g.secretEncoding ?? "PEM")}' | base64 -d > /tmp/jwt_pubkey
+${h} ${N} -X k -pk /tmp/jwt_pubkey`,
+            note: `Byte-exact. Writes the precise HMAC secret (${g.secretEncoding}) to a file, then forges the same token.` + (g.secretEncoding === "DER" ? " Note: DER is raw binary; jwt_tool reads the key file as text and may fail on it." : "")
           } : null;
         case "none":
           return {
-            cmd: `${x} ${E} -X a`,
+            cmd: `${h} ${N} -X a`,
             note: "Emits the alg:none variants (none/None/NONE/nOnE) with the signature stripped — pick the casing matching this row."
           };
         case "nullSig":
           return {
-            cmd: `${x} ${E} -X n`,
+            cmd: `${h} ${N} -X n`,
             note: "Produces the null-signature token (CVE-2020-28042)."
           };
         case "embeddedJwk":
           return {
-            cmd: `${x} ${E} -X i`,
+            cmd: `${h} ${N} -X i`,
             note: "CVE-2018-0114. jwt_tool generates its OWN embedded key, so the jwk and signature differ from this row, but the attack is equivalent."
           };
         case "jkuSpoof":
         case "x5uSpoof": {
-          const W = p.technique === "x5uSpoof" ? "x5u" : "jku", A = typeof q[W] == "string" ? q[W] : "<your-jwks-url>", Y = typeof q.kid == "string" ? q.kid : "jwt-attacker-spoof-key";
-          return p.signingKeyPem ? {
-            cmd: `echo -n '${btoa(p.signingKeyPem)}' | base64 -d > /tmp/priv.key
-${x} ${E} -I -hc ${W} -hv '${A}' -hc kid -hv '${Y}' -S rs256 -pr /tmp/priv.key`,
+          const W = g.technique === "x5uSpoof" ? "x5u" : "jku", A = typeof q[W] == "string" ? q[W] : "<your-jwks-url>", Y = typeof q.kid == "string" ? q.kid : "jwt-attacker-spoof-key";
+          return g.signingKeyPem ? {
+            cmd: `echo -n '${btoa(g.signingKeyPem)}' | base64 -d > /tmp/priv.key
+${h} ${N} -I -hc ${W} -hv '${A}' -hc kid -hv '${Y}' -S rs256 -pr /tmp/priv.key`,
             note: `Writes the spoofing private key to /tmp/priv.key, then re-signs with it — using the SAME key as the hosted JWKS, so the token validates. Inject the ${W} + kid headers and sign RS256. Host the JWKS (Configuration tab) at the ${W} URL.`
           } : {
-            cmd: `${x} ${E} -X s -ju '${A}'`,
+            cmd: `${h} ${N} -X s -ju '${A}'`,
             note: "Signing key unavailable; jwt_tool's -X s uses its OWN key (won't match the hosted JWKS)."
           };
         }
         case "kidInject": {
-          const W = typeof q.kid == "string" ? q.kid : "", A = p.hmacSecret ?? "";
+          const W = typeof q.kid == "string" ? q.kid : "", A = g.hmacSecret ?? "";
           return {
-            cmd: `${x} ${E} -I -hc kid -hv '${W}' -S hs256 -p '${A}'`,
+            cmd: `${h} ${N} -I -hc kid -hv '${W}' -S hs256 -p '${A}'`,
             note: `Sets kid="${W}" and signs HS256 with the secret this injection implies ("${A}").`
           };
         }
         case "weakSecret": {
           const W = (typeof q.alg == "string" ? q.alg : "HS256").toLowerCase();
-          return p.hmacSecret === void 0 ? {
+          return g.hmacSecret === void 0 ? {
             cmd: `# Crack the secret from a wordlist:
-${x} ${E} -C -d /path/to/jwt.secrets.list`,
+${h} ${N} -C -d /path/to/jwt.secrets.list`,
             note: "No secret matched the bundled lists. Try a larger wordlist with jwt_tool's crack mode (or hashcat, below)."
           } : {
             cmd: `# Crack the secret from a wordlist:
-${x} ${E} -C -d /path/to/jwt.secrets.list
+${h} ${N} -C -d /path/to/jwt.secrets.list
 # Forge with the cracked secret:
-${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
+${h} ${N} -S ${W} -p '${g.hmacSecret}'`,
             note: "Crack mode recovers the secret; the second command re-signs. Add -I -pc role -pv admin (etc.) to escalate claims."
           };
         }
         case "claimTamper": {
-          const W = l(p.originalJWT.split(".")[1] ?? "") ?? {}, A = l(p.modifiedJWT.split(".")[1] ?? "") ?? {}, Y = [], H = [];
+          const W = l(g.originalJWT.split(".")[1] ?? "") ?? {}, A = l(g.modifiedJWT.split(".")[1] ?? "") ?? {}, Y = [], H = [];
           for (const F of Object.keys(A))
             if (JSON.stringify(A[F]) !== JSON.stringify(W[F])) {
               const Q = typeof A[F] == "string" ? A[F] : JSON.stringify(A[F]);
@@ -13795,173 +13800,173 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
             }
           for (const F of Object.keys(W)) F in A || H.push(F);
           if (Y.length) {
-            let F = `${x} ${E} -I ${Y.join(" ")}`;
+            let F = `${h} ${N} -I ${Y.join(" ")}`;
             return H.length && (F += `
-# Then delete claims interactively: ${x} ${E} -T   (remove: ${H.join(", ")})`), {
+# Then delete claims interactively: ${h} ${N} -T   (remove: ${H.join(", ")})`), {
               cmd: F,
               note: "Tampers claims while leaving the original (invalid) signature — surfaces servers that skip verification. Non-string values are injected as strings; adjust if needed."
             };
           }
           return H.length ? {
-            cmd: `${x} ${E} -T   # interactively delete claims: ${H.join(", ")}`,
+            cmd: `${h} ${N} -T   # interactively delete claims: ${H.join(", ")}`,
             note: "jwt_tool can't delete claims non-interactively; use -T (tamper) mode and remove the listed claims."
           } : null;
         }
         default:
           return null;
       }
-    }), c = fe(() => {
+    }), c = de(() => {
       if (!t.result) return ["", "", ""];
-      const p = t.result.modifiedJWT.split(".");
-      return [p[0] ?? "", p[1] ?? "", p[2] ?? ""];
-    }), d = fe(() => {
+      const g = t.result.modifiedJWT.split(".");
+      return [g[0] ?? "", g[1] ?? "", g[2] ?? ""];
+    }), d = de(() => {
       if (!t.result) return null;
       try {
-        const p = kn(c.value[0]);
-        return JSON.stringify(JSON.parse(p), null, 2);
+        const g = kn(c.value[0]);
+        return JSON.stringify(JSON.parse(g), null, 2);
       } catch {
         return null;
       }
-    }), g = fe(() => {
+    }), b = de(() => {
       if (!t.result) return null;
       try {
-        const p = kn(c.value[1]);
-        return JSON.stringify(JSON.parse(p), null, 2);
+        const g = kn(c.value[1]);
+        return JSON.stringify(JSON.parse(g), null, 2);
       } catch {
         return null;
       }
     });
-    async function v() {
+    async function x() {
       t.result && (await navigator.clipboard.writeText(t.result.modifiedJWT), r.value = !0, setTimeout(() => {
         r.value = !1;
       }, 1500));
     }
     async function k() {
-      var p;
-      (p = t.result) != null && p.keyPem && (await navigator.clipboard.writeText(t.result.keyPem), n.value = !0, setTimeout(() => {
+      var g;
+      (g = t.result) != null && g.keyPem && (await navigator.clipboard.writeText(t.result.keyPem), n.value = !0, setTimeout(() => {
         n.value = !1;
       }, 1500));
     }
-    async function h() {
+    async function v() {
       u.value && (await navigator.clipboard.writeText(u.value.cmd), s.value = !0, setTimeout(() => {
         s.value = !1;
       }, 1500));
     }
-    async function V() {
+    async function S() {
       i.value && (await navigator.clipboard.writeText(i.value), o.value = !0, setTimeout(() => {
         o.value = !1;
       }, 1500));
     }
-    return (p, x) => e.result ? (C(), j("div", Tf, [
+    return (g, h) => e.result ? (V(), j("div", Tf, [
       I(" Technique header "),
-      m("div", Cf, [
-        m(
+      p("div", Cf, [
+        p(
           "span",
           {
             class: he(["px-2 py-0.5 rounded text-xs font-mono font-semibold shrink-0", we(Li)(e.result.technique)])
           },
-          S(e.result.technique),
+          R(e.result.technique),
           3
           /* TEXT, CLASS */
         ),
-        m("div", Vf, [
-          m(
+        p("div", Vf, [
+          p(
             "p",
             jf,
-            S(e.result.techniqueName),
+            R(e.result.techniqueName),
             1
             /* TEXT */
           ),
-          m(
+          p(
             "p",
             Pf,
-            S(e.result.description),
+            R(e.result.description),
             1
             /* TEXT */
           )
         ])
       ]),
-      m("div", qf, [
+      p("div", qf, [
         I(" Status summary "),
-        m("div", Lf, [
-          e.result.responseStatus ? (C(), j(
+        p("div", Lf, [
+          e.result.responseStatus ? (V(), j(
             "span",
             {
               key: 0,
               class: he(["font-bold", we(qi)(e.result.responseStatus)])
             },
-            " HTTP " + S(e.result.responseStatus),
+            " HTTP " + R(e.result.responseStatus),
             3
             /* TEXT, CLASS */
           )) : I("v-if", !0),
-          e.result.responseLength !== void 0 ? (C(), j(
+          e.result.responseLength !== void 0 ? (V(), j(
             "span",
             Nf,
-            S(e.result.responseLength) + " bytes ",
+            R(e.result.responseLength) + " bytes ",
             1
             /* TEXT */
           )) : I("v-if", !0),
-          e.result.durationMs !== void 0 ? (C(), j(
+          e.result.durationMs !== void 0 ? (V(), j(
             "span",
             Of,
-            S(e.result.durationMs) + "ms ",
+            R(e.result.durationMs) + "ms ",
             1
             /* TEXT */
           )) : I("v-if", !0),
-          e.result.error ? (C(), j(
+          e.result.error ? (V(), j(
             "span",
             Ef,
-            "Error: " + S(e.result.error),
+            "Error: " + R(e.result.error),
             1
             /* TEXT */
           )) : I("v-if", !0)
         ]),
         I(" Weak-secret offline brute-force outcome "),
-        e.result.technique === "weakSecret" ? (C(), j("section", If, [
-          x[1] || (x[1] = m(
+        e.result.technique === "weakSecret" ? (V(), j("section", If, [
+          h[1] || (h[1] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Offline brute-force result",
             -1
             /* CACHED */
           )),
-          e.result.hmacSecret !== void 0 ? (C(), j("div", Ff, [
-            x[0] || (x[0] = ne(
+          e.result.hmacSecret !== void 0 ? (V(), j("div", Ff, [
+            h[0] || (h[0] = ne(
               " ✓ Matched JWT secret: ",
               -1
               /* CACHED */
             )),
-            m(
+            p(
               "span",
               Mf,
-              '"' + S(e.result.hmacSecret) + '"',
+              '"' + R(e.result.hmacSecret) + '"',
               1
               /* TEXT */
             )
-          ])) : (C(), j(
+          ])) : (V(), j(
             "div",
             Wf,
-            " JWT secret not found in list of " + S(e.result.secretsTested) + " secrets ",
+            " JWT secret not found in list of " + R(e.result.secretsTested) + " secrets ",
             1
             /* TEXT */
           ))
         ])) : I("v-if", !0),
         I(" Invalid-signature probe outcome "),
-        e.result.technique === "invalidSig" ? (C(), j("section", Jf, [
-          x[6] || (x[6] = m(
+        e.result.technique === "invalidSig" ? (V(), j("section", Jf, [
+          h[6] || (h[6] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Signature validation check",
             -1
             /* CACHED */
           )),
-          e.result.signatureNotValidated ? (C(), j("div", Hf, [
-            x[2] || (x[2] = ne(
+          e.result.signatureNotValidated ? (V(), j("div", Hf, [
+            h[2] || (h[2] = ne(
               " ⚠ The corrupted-signature token was ",
               -1
               /* CACHED */
             )),
-            x[3] || (x[3] = m(
+            h[3] || (h[3] = p(
               "strong",
               null,
               "accepted",
@@ -13969,179 +13974,179 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
               /* CACHED */
             )),
             ne(
-              ": this response matches the baseline (status " + S(e.result.responseStatus) + ", ~" + S(e.result.responseLength) + " bytes). The endpoint ",
+              ": this response matches the baseline (status " + R(e.result.responseStatus) + ", ~" + R(e.result.responseLength) + " bytes). The endpoint ",
               1
               /* TEXT */
             ),
-            x[4] || (x[4] = m(
+            h[4] || (h[4] = p(
               "strong",
               null,
               "does NOT appear to enforce JWT signature validation",
               -1
               /* CACHED */
             )),
-            x[5] || (x[5] = ne(
+            h[5] || (h[5] = ne(
               ' — forged/tampered tokens would be accepted. A finding "Endpoint may not validate JWT signature" has been created. ',
               -1
               /* CACHED */
             ))
-          ])) : (C(), j(
+          ])) : (V(), j(
             "div",
             Xf,
-            " ✓ The corrupted-signature response differs from the baseline (status " + S(e.result.responseStatus) + ") — the endpoint appears to enforce JWT signature validation. ",
+            " ✓ The corrupted-signature response differs from the baseline (status " + R(e.result.responseStatus) + ") — the endpoint appears to enforce JWT signature validation. ",
             1
             /* TEXT */
           ))
         ])) : I("v-if", !0),
         I(" Modified JWT (hidden for info-only rows such as JWKS verification) "),
-        e.result.modifiedJWT ? (C(), j("section", Kf, [
-          x[9] || (x[9] = m(
+        e.result.modifiedJWT ? (V(), j("section", Kf, [
+          h[9] || (h[9] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Modified JWT",
             -1
             /* CACHED */
           )),
-          m("div", Uf, [
-            m(
+          p("div", Uf, [
+            p(
               "span",
               Zf,
-              S(c.value[0]),
+              R(c.value[0]),
               1
               /* TEXT */
             ),
-            x[7] || (x[7] = ne(
+            h[7] || (h[7] = ne(
               ".",
               -1
               /* CACHED */
             )),
-            m(
+            p(
               "span",
               Gf,
-              S(c.value[1]),
+              R(c.value[1]),
               1
               /* TEXT */
             ),
-            x[8] || (x[8] = ne(
+            h[8] || (h[8] = ne(
               ".",
               -1
               /* CACHED */
             )),
-            m(
+            p(
               "span",
               Bf,
-              S(c.value[2]),
+              R(c.value[2]),
               1
               /* TEXT */
             )
           ]),
-          m(
+          p(
             "button",
             {
-              onClick: v,
+              onClick: x,
               class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             },
-            S(r.value ? "✓ Copied" : "Copy JWT"),
+            R(r.value ? "✓ Copied" : "Copy JWT"),
             1
             /* TEXT */
           )
         ])) : I("v-if", !0),
         I(" Public key / certificate used (algorithm confusion) "),
-        e.result.keyPem ? (C(), j("section", Df, [
-          m("p", Yf, [
-            x[10] || (x[10] = ne(
+        e.result.keyPem ? (V(), j("section", Df, [
+          p("p", Yf, [
+            h[10] || (h[10] = ne(
               " Public Key / Certificate Used ",
               -1
               /* CACHED */
             )),
-            e.result.secretEncoding ? (C(), j(
+            e.result.secretEncoding ? (V(), j(
               "span",
               Af,
-              " — HMAC secret: " + S(e.result.secretEncoding),
+              " — HMAC secret: " + R(e.result.secretEncoding),
               1
               /* TEXT */
             )) : I("v-if", !0)
           ]),
-          m(
+          p(
             "pre",
             Qf,
-            S(e.result.keyPem),
+            R(e.result.keyPem),
             1
             /* TEXT */
           ),
-          m(
+          p(
             "button",
             {
               onClick: k,
               class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             },
-            S(n.value ? "✓ Copied" : "Copy PEM"),
+            R(n.value ? "✓ Copied" : "Copy PEM"),
             1
             /* TEXT */
           )
         ])) : I("v-if", !0),
         I(" Decoded header "),
-        d.value ? (C(), j("section", _f, [
-          x[11] || (x[11] = m(
+        d.value ? (V(), j("section", _f, [
+          h[11] || (h[11] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Decoded Header",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "pre",
             $f,
-            S(d.value),
+            R(d.value),
             1
             /* TEXT */
           )
         ])) : I("v-if", !0),
         I(" Decoded payload "),
-        g.value ? (C(), j("section", ep, [
-          x[12] || (x[12] = m(
+        b.value ? (V(), j("section", ep, [
+          h[12] || (h[12] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Decoded Payload",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "pre",
             tp,
-            S(g.value),
+            R(b.value),
             1
             /* TEXT */
           )
         ])) : I("v-if", !0),
         I(" Response headers "),
-        e.result.responseHeaders && Object.keys(e.result.responseHeaders).length ? (C(), j("section", rp, [
-          x[13] || (x[13] = m(
+        e.result.responseHeaders && Object.keys(e.result.responseHeaders).length ? (V(), j("section", rp, [
+          h[13] || (h[13] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Response Headers",
             -1
             /* CACHED */
           )),
-          m("div", np, [
-            (C(!0), j(
+          p("div", np, [
+            (V(!0), j(
               ie,
               null,
-              Ee(e.result.responseHeaders, (E, q) => (C(), j("div", {
+              Ee(e.result.responseHeaders, (N, q) => (V(), j("div", {
                 key: q,
                 class: "flex gap-2"
               }, [
-                m(
+                p(
                   "span",
                   sp,
-                  S(q) + ":",
+                  R(q) + ":",
                   1
                   /* TEXT */
                 ),
-                m(
+                p(
                   "span",
                   op,
-                  S(E),
+                  R(N),
                   1
                   /* TEXT */
                 )
@@ -14152,58 +14157,58 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
           ])
         ])) : I("v-if", !0),
         I(" Response body "),
-        e.result.responseBody ? (C(), j("section", ip, [
-          x[14] || (x[14] = m(
+        e.result.responseBody ? (V(), j("section", ip, [
+          h[14] || (h[14] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Response Body",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "pre",
             ap,
-            S(e.result.responseBody),
+            R(e.result.responseBody),
             1
             /* TEXT */
           )
         ])) : I("v-if", !0),
         I(" Reproduce with jwt_tool "),
-        u.value ? (C(), j(
+        u.value ? (V(), j(
           "section",
           {
             key: 8,
             class: he(["px-4 py-3", i.value ? "border-b border-gray-700" : ""])
           },
           [
-            x[15] || (x[15] = m(
+            h[15] || (h[15] = p(
               "p",
               { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
               "Reproduce with jwt_tool",
               -1
               /* CACHED */
             )),
-            u.value.note ? (C(), j(
+            u.value.note ? (V(), j(
               "p",
               lp,
-              S(u.value.note),
+              R(u.value.note),
               1
               /* TEXT */
             )) : I("v-if", !0),
-            m(
+            p(
               "pre",
               cp,
-              S(u.value.cmd),
+              R(u.value.cmd),
               1
               /* TEXT */
             ),
-            m(
+            p(
               "button",
               {
-                onClick: h,
+                onClick: v,
                 class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
               },
-              S(s.value ? "✓ Copied" : "Copy commands"),
+              R(s.value ? "✓ Copied" : "Copy commands"),
               1
               /* TEXT */
             )
@@ -14212,41 +14217,41 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
           /* CLASS */
         )) : I("v-if", !0),
         I(" Identifying secret with hashcat (weak-secret only) "),
-        i.value ? (C(), j("section", up, [
-          x[16] || (x[16] = m(
+        i.value ? (V(), j("section", up, [
+          h[16] || (h[16] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Identifying secret with hashcat",
             -1
             /* CACHED */
           )),
-          x[17] || (x[17] = m(
+          h[17] || (h[17] = p(
             "p",
             { class: "text-xs text-gray-500 mb-1.5" },
             " Offline crack with hashcat (mode 16500 = JWT / HMAC-SHA). Point the last argument at the wordlist on disk. ",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "pre",
             dp,
-            S(i.value),
+            R(i.value),
             1
             /* TEXT */
           ),
-          m(
+          p(
             "button",
             {
-              onClick: V,
+              onClick: S,
               class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             },
-            S(o.value ? "✓ Copied" : "Copy command"),
+            R(o.value ? "✓ Copied" : "Copy command"),
             1
             /* TEXT */
           )
         ])) : I("v-if", !0)
       ])
-    ])) : (C(), j("div", fp, " Select an attack to see details "));
+    ])) : (V(), j("div", fp, " Select an attack to see details "));
   }
 }), mp = {
   key: 0,
@@ -14274,7 +14279,7 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
         { label: "DER (base64)", value: a.replace(/-----[^-]+-----/g, "").replace(/\s/g, "") }
       ];
     }
-    const s = fe(
+    const s = de(
       () => {
         var i;
         return (((i = t.endpoint) == null ? void 0 : i.pems) ?? []).map((a) => ({ pem: a, variants: n(a) }));
@@ -14285,136 +14290,136 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
         r.value = null;
       }, 1500);
     }
-    return (i, a) => e.endpoint ? (C(), j("div", mp, [
+    return (i, a) => e.endpoint ? (V(), j("div", mp, [
       I(" Header "),
-      m("div", bp, [
-        m(
+      p("div", bp, [
+        p(
           "span",
           hp,
-          S(e.endpoint.source),
+          R(e.endpoint.source),
           1
           /* TEXT */
         ),
-        m("div", gp, [
-          a[2] || (a[2] = m(
+        p("div", gp, [
+          a[2] || (a[2] = p(
             "p",
             { class: "font-semibold text-gray-100" },
             "Discovered key endpoint",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "p",
             vp,
-            S(e.endpoint.keyCount) + " key(s) extracted and used for algorithm-confusion attacks. ",
+            R(e.endpoint.keyCount) + " key(s) extracted and used for algorithm-confusion attacks. ",
             1
             /* TEXT */
           )
         ])
       ]),
-      m("div", xp, [
+      p("div", xp, [
         I(" URL "),
-        m("section", yp, [
-          a[3] || (a[3] = m(
+        p("section", yp, [
+          a[3] || (a[3] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "URL",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "div",
             kp,
-            S(e.endpoint.url),
+            R(e.endpoint.url),
             1
             /* TEXT */
           ),
-          m(
+          p(
             "button",
             {
               onClick: a[0] || (a[0] = (l) => o(e.endpoint.url, "url")),
               class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             },
-            S(r.value === "url" ? "✓ Copied" : "Copy URL"),
+            R(r.value === "url" ? "✓ Copied" : "Copy URL"),
             1
             /* TEXT */
           )
         ]),
         I(" Keys extracted "),
-        m("section", wp, [
-          a[4] || (a[4] = m(
+        p("section", wp, [
+          a[4] || (a[4] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Keys extracted",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "p",
             zp,
-            S(e.endpoint.keyCount),
+            R(e.endpoint.keyCount),
             1
             /* TEXT */
           )
         ]),
         I(" PEM keys + the HMAC secret encodings used in algorithm confusion "),
-        s.value.length ? (C(), j("section", Sp, [
-          m(
+        s.value.length ? (V(), j("section", Sp, [
+          p(
             "p",
             Rp,
-            " PEM-encoded " + S(s.value.length > 1 ? "keys" : "key") + " used in algorithm-confusion attacks ",
+            " PEM-encoded " + R(s.value.length > 1 ? "keys" : "key") + " used in algorithm-confusion attacks ",
             1
             /* TEXT */
           ),
-          (C(!0), j(
+          (V(!0), j(
             ie,
             null,
-            Ee(s.value, (l, u) => (C(), j("div", {
+            Ee(s.value, (l, u) => (V(), j("div", {
               key: u,
               class: "mb-4 last:mb-0"
             }, [
-              m(
+              p(
                 "pre",
                 Tp,
-                S(l.pem),
+                R(l.pem),
                 1
                 /* TEXT */
               ),
-              m("button", {
+              p("button", {
                 onClick: (c) => o(l.pem, "pem-" + u),
                 class: "mt-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-              }, S(r.value === "pem-" + u ? "✓ Copied" : "Copy PEM"), 9, Cp),
-              m(
+              }, R(r.value === "pem-" + u ? "✓ Copied" : "Copy PEM"), 9, Cp),
+              p(
                 "p",
                 Vp,
-                " HMAC secret encodings tried with this key (key " + S(u + 1) + "): ",
+                " HMAC secret encodings tried with this key (key " + R(u + 1) + "): ",
                 1
                 /* TEXT */
               ),
-              (C(!0), j(
+              (V(!0), j(
                 ie,
                 null,
-                Ee(l.variants, (c, d) => (C(), j("div", {
+                Ee(l.variants, (c, d) => (V(), j("div", {
                   key: d,
                   class: "mb-1.5"
                 }, [
-                  m("div", jp, [
-                    m(
+                  p("div", jp, [
+                    p(
                       "span",
                       Pp,
-                      S(c.label),
+                      R(c.label),
                       1
                       /* TEXT */
                     ),
-                    m("button", {
-                      onClick: (g) => o(c.value, `var-${u}-${d}`),
+                    p("button", {
+                      onClick: (b) => o(c.value, `var-${u}-${d}`),
                       class: "text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                    }, S(r.value === `var-${u}-${d}` ? "✓ Copied" : "Copy"), 9, qp)
+                    }, R(r.value === `var-${u}-${d}` ? "✓ Copied" : "Copy"), 9, qp)
                   ]),
-                  m(
+                  p(
                     "pre",
                     Lp,
-                    S(c.value),
+                    R(c.value),
                     1
                     /* TEXT */
                   )
@@ -14428,34 +14433,34 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
           ))
         ])) : I("v-if", !0),
         I(" Raw content returned "),
-        m("section", Np, [
-          a[5] || (a[5] = m(
+        p("section", Np, [
+          a[5] || (a[5] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Content returned by URL",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "pre",
             Op,
-            S(e.endpoint.content || "(empty)"),
+            R(e.endpoint.content || "(empty)"),
             1
             /* TEXT */
           ),
-          m(
+          p(
             "button",
             {
               onClick: a[1] || (a[1] = (l) => o(e.endpoint.content, "content")),
               class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             },
-            S(r.value === "content" ? "✓ Copied" : "Copy Content"),
+            R(r.value === "content" ? "✓ Copied" : "Copy Content"),
             1
             /* TEXT */
           )
         ])
       ])
-    ])) : (C(), j("div", Ep, " Select an item to see details "));
+    ])) : (V(), j("div", Ep, " Select an item to see details "));
   }
 }), Fp = {
   key: 0,
@@ -14472,7 +14477,7 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
     spoof: {}
   },
   setup(e) {
-    const t = e, r = te(null), n = fe(() => {
+    const t = e, r = te(null), n = de(() => {
       var o;
       switch ((o = t.spoof) == null ? void 0 : o.verifyStatus) {
         case "verified":
@@ -14490,174 +14495,174 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
         r.value = null;
       }, 1500);
     }
-    return (o, i) => e.spoof ? (C(), j("div", Fp, [
+    return (o, i) => e.spoof ? (V(), j("div", Fp, [
       I(" Header "),
-      m("div", Mp, [
-        m(
+      p("div", Mp, [
+        p(
           "span",
           {
             class: he(["px-2 py-0.5 rounded text-xs font-mono font-semibold shrink-0", n.value.cls])
           },
-          S(n.value.label),
+          R(n.value.label),
           3
           /* TEXT, CLASS */
         ),
-        m("div", Wp, [
-          i[3] || (i[3] = m(
+        p("div", Wp, [
+          i[3] || (i[3] = p(
             "p",
             { class: "font-semibold text-gray-100" },
             "JKU / X5U Spoofing",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "p",
             Jp,
-            S(e.spoof.verifyMessage),
+            R(e.spoof.verifyMessage),
             1
             /* TEXT */
           )
         ])
       ]),
-      m("div", Hp, [
+      p("div", Hp, [
         I(" Status summary "),
-        m("section", Xp, [
-          m("div", Kp, [
-            i[4] || (i[4] = m(
+        p("section", Xp, [
+          p("div", Kp, [
+            i[4] || (i[4] = p(
               "span",
               { class: "text-xs text-gray-500 w-40 shrink-0" },
               "Endpoint check",
               -1
               /* CACHED */
             )),
-            m(
+            p(
               "span",
               {
                 class: he(["text-xs font-medium", n.value.textCls])
               },
-              S(n.value.detail),
+              R(n.value.detail),
               3
               /* TEXT, CLASS */
             )
           ]),
-          m("div", Up, [
-            i[5] || (i[5] = m(
+          p("div", Up, [
+            i[5] || (i[5] = p(
               "span",
               { class: "text-xs text-gray-500 w-40 shrink-0" },
               "Token self-verification",
               -1
               /* CACHED */
             )),
-            m(
+            p(
               "span",
               {
                 class: he(["text-xs font-medium", e.spoof.selfVerified ? "text-green-400" : "text-red-400"])
               },
-              S(e.spoof.selfVerified ? "✓ Signed token validates against this JWKS" : "✗ Signed token did NOT validate"),
+              R(e.spoof.selfVerified ? "✓ Signed token validates against this JWKS" : "✗ Signed token did NOT validate"),
               3
               /* TEXT, CLASS */
             )
           ]),
-          m("div", Zp, [
-            i[6] || (i[6] = m(
+          p("div", Zp, [
+            i[6] || (i[6] = p(
               "span",
               { class: "text-xs text-gray-500 w-40 shrink-0" },
               "JWKS Endpoint URL",
               -1
               /* CACHED */
             )),
-            m(
+            p(
               "span",
               Gp,
-              S(e.spoof.url),
+              R(e.spoof.url),
               1
               /* TEXT */
             )
           ])
         ]),
         I(" JWKS to host "),
-        m("section", Bp, [
-          i[7] || (i[7] = m(
+        p("section", Bp, [
+          i[7] || (i[7] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "JWKS to host (at the URL above)",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "pre",
             Dp,
-            S(e.spoof.jwksJson),
+            R(e.spoof.jwksJson),
             1
             /* TEXT */
           ),
-          m(
+          p(
             "button",
             {
               onClick: i[0] || (i[0] = (a) => s(e.spoof.jwksJson, "jwks")),
               class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             },
-            S(r.value === "jwks" ? "✓ Copied" : "Copy JWKS"),
+            R(r.value === "jwks" ? "✓ Copied" : "Copy JWKS"),
             1
             /* TEXT */
           )
         ]),
         I(" Content actually fetched from the URL "),
-        e.spoof.fetchedContent ? (C(), j("section", Yp, [
-          i[8] || (i[8] = m(
+        e.spoof.fetchedContent ? (V(), j("section", Yp, [
+          i[8] || (i[8] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Content returned by the URL",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "pre",
             Ap,
-            S(e.spoof.fetchedContent),
+            R(e.spoof.fetchedContent),
             1
             /* TEXT */
           ),
-          m(
+          p(
             "button",
             {
               onClick: i[1] || (i[1] = (a) => s(e.spoof.fetchedContent, "fetched")),
               class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             },
-            S(r.value === "fetched" ? "✓ Copied" : "Copy"),
+            R(r.value === "fetched" ? "✓ Copied" : "Copy"),
             1
             /* TEXT */
           )
         ])) : I("v-if", !0),
         I(" Signing private key "),
-        m("section", Qp, [
-          i[9] || (i[9] = m(
+        p("section", Qp, [
+          i[9] || (i[9] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
             "Signing private key (spoofing key pair)",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "pre",
             _p,
-            S(e.spoof.privateKeyPem),
+            R(e.spoof.privateKeyPem),
             1
             /* TEXT */
           ),
-          m(
+          p(
             "button",
             {
               onClick: i[2] || (i[2] = (a) => s(e.spoof.privateKeyPem, "key")),
               class: "mt-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
             },
-            S(r.value === "key" ? "✓ Copied" : "Copy private key"),
+            R(r.value === "key" ? "✓ Copied" : "Copy private key"),
             1
             /* TEXT */
           )
         ])
       ])
-    ])) : (C(), j("div", $p, " Select an item to see details "));
+    ])) : (V(), j("div", $p, " Select an item to see details "));
   }
 }), t0 = { class: "h-full overflow-y-auto text-sm" }, r0 = { class: "px-4 py-3 border-b border-gray-700" }, n0 = { key: 0 }, s0 = { class: "text-xs text-green-300 mb-1" }, o0 = { class: "bg-gray-900 rounded p-2 text-xs text-green-200 overflow-x-auto whitespace-pre-wrap break-all select-all" }, i0 = {
   key: 1,
@@ -14674,31 +14679,31 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
     session: {}
   },
   setup(e) {
-    const t = e, r = fe(() => {
+    const t = e, r = de(() => {
       var c;
       return ((c = t.session) == null ? void 0 : c.keyRecoveryLog) ?? [];
-    }), n = fe(() => {
+    }), n = de(() => {
       var c, d;
       return ((d = (c = t.session) == null ? void 0 : c.recovery) == null ? void 0 : d.candidates) ?? [];
-    }), s = fe(() => {
+    }), s = de(() => {
       var c, d;
       return ((d = (c = t.session) == null ? void 0 : c.recovery) == null ? void 0 : d.keys) ?? [];
-    }), o = fe(() => {
+    }), o = de(() => {
       var c, d;
       return ((d = (c = t.session) == null ? void 0 : c.recovery) == null ? void 0 : d.originalJWT) ?? "<original-JWT>";
     });
     function i(c) {
       return c.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
     }
-    const a = fe(() => {
+    const a = de(() => {
       var k;
-      const c = n.value, d = c[0] ?? "<JWT-token1>", g = c[1] ?? "<JWT-token2>", v = (k = s.value[0]) != null && k.pem ? i(s.value[0].pem) : "<base64-encoded-x509-key-from-sign2n>";
+      const c = n.value, d = c[0] ?? "<JWT-token1>", b = c[1] ?? "<JWT-token2>", x = (k = s.value[0]) != null && k.pem ? i(s.value[0].pem) : "<base64-encoded-x509-key-from-sign2n>";
       return [
         "# 1. Recover candidate public keys from two same-key JWTs:",
-        `docker run --rm -it portswigger/sig2n ${d} ${g}`,
+        `docker run --rm -it portswigger/sig2n ${d} ${b}`,
         "",
         "# 2. Write the recovered X.509 public key to a file:",
-        `echo -n ${v} | base64 -d > /tmp/recoveredkey`,
+        `echo -n ${x} | base64 -d > /tmp/recoveredkey`,
         "",
         "# 3. Forge a token via algorithm confusion (RS->HS) with the recovered key:",
         `python3 jwt_tool.py ${o.value} -X k -pk /tmp/recoveredkey`
@@ -14710,45 +14715,45 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
         l.value = !1;
       }, 1500);
     }
-    return (c, d) => (C(), j("div", t0, [
-      d[5] || (d[5] = m(
+    return (c, d) => (V(), j("div", t0, [
+      d[5] || (d[5] = p(
         "div",
         { class: "px-4 py-3 border-b border-gray-700" },
         [
-          m("h3", { class: "text-sm font-semibold text-yellow-300" }, "🔑 RSA public-key recovery"),
-          m("p", { class: "text-xs text-gray-500 mt-0.5" }, " Recovers the server's RSA public key from two same-key JWTs (silentsignal rsa_sign2n / jwt_forgery.py), computed in-browser with gmp-wasm, then used for an algorithm-confusion attack. ")
+          p("h3", { class: "text-sm font-semibold text-yellow-300" }, "🔑 RSA public-key recovery"),
+          p("p", { class: "text-xs text-gray-500 mt-0.5" }, " Recovers the server's RSA public key from two same-key JWTs (silentsignal rsa_sign2n / jwt_forgery.py), computed in-browser with gmp-wasm, then used for an algorithm-confusion attack. ")
         ],
         -1
         /* CACHED */
       )),
       I(" Recovered key(s) "),
-      m("section", r0, [
-        d[1] || (d[1] = m(
+      p("section", r0, [
+        d[1] || (d[1] = p(
           "p",
           { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
           "Recovered public key(s)",
           -1
           /* CACHED */
         )),
-        s.value.length ? (C(), j("div", n0, [
-          (C(!0), j(
+        s.value.length ? (V(), j("div", n0, [
+          (V(!0), j(
             ie,
             null,
-            Ee(s.value, (g, v) => (C(), j("div", {
-              key: v,
+            Ee(s.value, (b, x) => (V(), j("div", {
+              key: x,
               class: "mb-3"
             }, [
-              m(
+              p(
                 "div",
                 s0,
-                "✓ " + S(g.bits) + "-bit modulus (e=" + S(g.e) + ")",
+                "✓ " + R(b.bits) + "-bit modulus (e=" + R(b.e) + ")",
                 1
                 /* TEXT */
               ),
-              m(
+              p(
                 "pre",
                 o0,
-                S(g.pem),
+                R(b.pem),
                 1
                 /* TEXT */
               )
@@ -14756,13 +14761,13 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
             128
             /* KEYED_FRAGMENT */
           ))
-        ])) : (C(), j("p", i0, [...d[0] || (d[0] = [
+        ])) : (V(), j("p", i0, [...d[0] || (d[0] = [
           ne(
             " No key recovered yet. Recovery needs ≥2 ",
             -1
             /* CACHED */
           ),
-          m(
+          p(
             "strong",
             null,
             "distinct",
@@ -14774,7 +14779,7 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
             -1
             /* CACHED */
           ),
-          m(
+          p(
             "strong",
             null,
             "same",
@@ -14786,7 +14791,7 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
             -1
             /* CACHED */
           ),
-          m(
+          p(
             "code",
             null,
             "header.payload",
@@ -14801,30 +14806,30 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
         ])]))
       ]),
       I(" Candidate JWTs "),
-      m("section", a0, [
-        m(
+      p("section", a0, [
+        p(
           "p",
           l0,
-          " Candidate JWTs from history (" + S(n.value.length) + ") ",
+          " Candidate JWTs from history (" + R(n.value.length) + ") ",
           1
           /* TEXT */
         ),
-        n.value.length ? (C(), j("div", c0, [
-          (C(!0), j(
+        n.value.length ? (V(), j("div", c0, [
+          (V(!0), j(
             ie,
             null,
-            Ee(n.value, (g, v) => (C(), j("div", { key: v }, [
-              m(
+            Ee(n.value, (b, x) => (V(), j("div", { key: x }, [
+              p(
                 "div",
                 u0,
-                "JWT " + S(v + 1),
+                "JWT " + R(x + 1),
                 1
                 /* TEXT */
               ),
-              m(
+              p(
                 "pre",
                 d0,
-                S(g),
+                R(b),
                 1
                 /* TEXT */
               )
@@ -14832,59 +14837,59 @@ ${x} ${E} -S ${W} -p '${p.hmacSecret}'`,
             128
             /* KEYED_FRAGMENT */
           ))
-        ])) : (C(), j("p", f0, "No candidate JWTs."))
+        ])) : (V(), j("p", f0, "No candidate JWTs."))
       ]),
       I(" Recovery log "),
-      m("section", p0, [
-        d[2] || (d[2] = m(
+      p("section", p0, [
+        d[2] || (d[2] = p(
           "p",
           { class: "text-xs text-gray-500 uppercase tracking-wide mb-1" },
           "Recovery log",
           -1
           /* CACHED */
         )),
-        m(
+        p(
           "pre",
           m0,
-          S(r.value.join(`
+          R(r.value.join(`
 `)),
           1
           /* TEXT */
         )
       ]),
       I(" Reproduce with jwt_tool "),
-      m("section", b0, [
-        m("div", h0, [
-          d[3] || (d[3] = m(
+      p("section", b0, [
+        p("div", h0, [
+          d[3] || (d[3] = p(
             "p",
             { class: "text-xs text-gray-500 uppercase tracking-wide" },
             "Reproduce with jwt_tool",
             -1
             /* CACHED */
           )),
-          m(
+          p(
             "button",
             {
               onClick: u,
               class: "text-xs text-gray-400 hover:text-blue-400 transition-colors"
             },
-            S(l.value ? "✓ Copied" : "Copy"),
+            R(l.value ? "✓ Copied" : "Copy"),
             1
             /* TEXT */
           )
         ]),
-        m(
+        p(
           "pre",
           g0,
-          S(a.value),
+          R(a.value),
           1
           /* TEXT */
         ),
-        d[4] || (d[4] = m(
+        d[4] || (d[4] = p(
           "p",
           { class: "text-xs text-gray-500 mt-1" },
           [
-            m("code", null, "portswigger/sig2n"),
+            p("code", null, "portswigger/sig2n"),
             ne(" is the Dockerised rsa_sign2n. It prints candidate X.509 keys; this plugin already recovered the matching one (shown above), so step 2 uses it directly. ")
           ],
           -1
@@ -14988,13 +14993,13 @@ const S0 = { class: "h-full overflow-y-auto px-4 py-4 space-y-6 text-sm" }, R0 =
       i.value = !0, a.value = "";
       try {
         const k = (() => {
-          const V = new Uint8Array(256);
-          crypto.getRandomValues(V);
-          let p = "";
-          for (const x of V) p += x.toString(16).padStart(2, "0");
-          return p;
-        })(), h = await w0(k);
-        l.value = !!(h != null && h.ok), a.value = (h == null ? void 0 : h.message) ?? "No response.";
+          const S = new Uint8Array(256);
+          crypto.getRandomValues(S);
+          let g = "";
+          for (const h of S) g += h.toString(16).padStart(2, "0");
+          return g;
+        })(), v = await w0(k);
+        l.value = !!(v != null && v.ok), a.value = (v == null ? void 0 : v.message) ?? "No response.";
       } catch (k) {
         l.value = !1, a.value = `Self-test threw: ${k.message}`;
       } finally {
@@ -15008,36 +15013,36 @@ const S0 = { class: "h-full overflow-y-auto px-4 py-4 space-y-6 text-sm" }, R0 =
     async function d() {
       t.update({ ...n }), await t.regenerateSpoofKeyPair();
     }
-    async function g() {
+    async function b() {
       n.spoofJwksJson && (await navigator.clipboard.writeText(n.spoofJwksJson), o.value = !0, setTimeout(() => {
         o.value = !1;
       }, 1500));
     }
-    async function v() {
+    async function x() {
       t.update({ ...n }), await t.save(), s.value = !0, setTimeout(() => {
         s.value = !1;
       }, 2e3);
     }
-    return (k, h) => (C(), j("div", S0, [
-      m("section", null, [
-        h[9] || (h[9] = m(
+    return (k, v) => (V(), j("div", S0, [
+      p("section", null, [
+        v[9] || (v[9] = p(
           "h2",
           { class: "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3" },
           "JKU / X5U Spoofing",
           -1
           /* CACHED */
         )),
-        h[10] || (h[10] = m(
+        v[10] || (v[10] = p(
           "label",
           { class: "block mb-1 text-gray-300" },
           "JWKS Endpoint URL",
           -1
           /* CACHED */
         )),
-        Rt(m(
+        Rt(p(
           "input",
           {
-            "onUpdate:modelValue": h[0] || (h[0] = (V) => n.jwksUrl = V),
+            "onUpdate:modelValue": v[0] || (v[0] = (S) => n.jwksUrl = S),
             type: "url",
             placeholder: "https://attacker.example.com/jwks.json",
             class: "w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-gray-200 text-xs font-mono focus:outline-none focus:border-blue-500"
@@ -15048,7 +15053,7 @@ const S0 = { class: "h-full overflow-y-auto px-4 py-4 space-y-6 text-sm" }, R0 =
         ), [
           [jr, n.jwksUrl]
         ]),
-        h[11] || (h[11] = m(
+        v[11] || (v[11] = p(
           "p",
           { class: "text-xs text-gray-500 mt-1" },
           " Host the JWKS JSON below at this URL so the target server can fetch the attacker's key. ",
@@ -15056,46 +15061,46 @@ const S0 = { class: "h-full overflow-y-auto px-4 py-4 space-y-6 text-sm" }, R0 =
           /* CACHED */
         )),
         I(" JWKS document to host (matches the persisted spoofing key pair) "),
-        m("div", R0, [
-          m("div", T0, [
-            h[7] || (h[7] = m(
+        p("div", R0, [
+          p("div", T0, [
+            v[7] || (v[7] = p(
               "label",
               { class: "block text-gray-300" },
               [
                 ne("JWKS to host ("),
-                m("code", null, "jwks.json"),
+                p("code", null, "jwks.json"),
                 ne(")")
               ],
               -1
               /* CACHED */
             )),
-            m("div", C0, [
-              m(
+            p("div", C0, [
+              p(
                 "button",
                 {
-                  onClick: g,
+                  onClick: b,
                   class: "text-xs text-gray-400 hover:text-blue-400 transition-colors"
                 },
-                S(o.value ? "✓ Copied" : "Copy"),
+                R(o.value ? "✓ Copied" : "Copy"),
                 1
                 /* TEXT */
               ),
-              m("button", {
+              p("button", {
                 onClick: d,
                 disabled: we(t).regenerating,
                 class: "text-xs text-gray-400 hover:text-blue-400 transition-colors disabled:opacity-50",
                 title: "Generate a new key pair and JWKS (invalidates the previously hosted one)"
-              }, S(we(t).regenerating ? "Regenerating…" : "↻ Regenerate key pair"), 9, V0)
+              }, R(we(t).regenerating ? "Regenerating…" : "↻ Regenerate key pair"), 9, V0)
             ])
           ]),
-          m("textarea", {
+          p("textarea", {
             value: n.spoofJwksJson,
             readonly: "",
             rows: "10",
             placeholder: "(generated automatically on first run)",
             class: "w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-green-300 text-xs font-mono focus:outline-none resize-y"
           }, null, 8, j0),
-          h[8] || (h[8] = m(
+          v[8] || (v[8] = p(
             "p",
             { class: "text-xs text-gray-500 mt-1" },
             " Auto-generated and stored on install. The JKU/X5U spoofing attack signs tokens with the matching private key, so host this exact document. Use Regenerate to rotate the key pair — you must then re-host the new JWKS. ",
@@ -15104,27 +15109,27 @@ const S0 = { class: "h-full overflow-y-auto px-4 py-4 space-y-6 text-sm" }, R0 =
           ))
         ])
       ]),
-      m("section", null, [
-        h[15] || (h[15] = m(
+      p("section", null, [
+        v[15] || (v[15] = p(
           "h2",
           { class: "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3" },
           "Custom Keys / Certificate",
           -1
           /* CACHED */
         )),
-        m("div", P0, [
-          m("div", null, [
-            h[12] || (h[12] = m(
+        p("div", P0, [
+          p("div", null, [
+            v[12] || (v[12] = p(
               "label",
               { class: "block mb-1 text-gray-300" },
               "Public Key (PEM)",
               -1
               /* CACHED */
             )),
-            Rt(m(
+            Rt(p(
               "textarea",
               {
-                "onUpdate:modelValue": h[1] || (h[1] = (V) => n.customPublicKeyPem = V),
+                "onUpdate:modelValue": v[1] || (v[1] = (S) => n.customPublicKeyPem = S),
                 rows: "4",
                 placeholder: `-----BEGIN PUBLIC KEY-----
 ...`,
@@ -15137,18 +15142,18 @@ const S0 = { class: "h-full overflow-y-auto px-4 py-4 space-y-6 text-sm" }, R0 =
               [jr, n.customPublicKeyPem]
             ])
           ]),
-          m("div", null, [
-            h[13] || (h[13] = m(
+          p("div", null, [
+            v[13] || (v[13] = p(
               "label",
               { class: "block mb-1 text-gray-300" },
               "Private Key (PEM) — for JKU/X5U spoofing",
               -1
               /* CACHED */
             )),
-            Rt(m(
+            Rt(p(
               "textarea",
               {
-                "onUpdate:modelValue": h[2] || (h[2] = (V) => n.customPrivateKeyPem = V),
+                "onUpdate:modelValue": v[2] || (v[2] = (S) => n.customPrivateKeyPem = S),
                 rows: "4",
                 placeholder: `-----BEGIN PRIVATE KEY-----
 ...`,
@@ -15161,18 +15166,18 @@ const S0 = { class: "h-full overflow-y-auto px-4 py-4 space-y-6 text-sm" }, R0 =
               [jr, n.customPrivateKeyPem]
             ])
           ]),
-          m("div", null, [
-            h[14] || (h[14] = m(
+          p("div", null, [
+            v[14] || (v[14] = p(
               "label",
               { class: "block mb-1 text-gray-300" },
               "Certificate (PEM) — for algorithm confusion",
               -1
               /* CACHED */
             )),
-            Rt(m(
+            Rt(p(
               "textarea",
               {
-                "onUpdate:modelValue": h[3] || (h[3] = (V) => n.customCertPem = V),
+                "onUpdate:modelValue": v[3] || (v[3] = (S) => n.customCertPem = S),
                 rows: "4",
                 placeholder: `-----BEGIN CERTIFICATE-----
 ...`,
@@ -15187,58 +15192,58 @@ const S0 = { class: "h-full overflow-y-auto px-4 py-4 space-y-6 text-sm" }, R0 =
           ])
         ])
       ]),
-      m("section", null, [
-        m("div", { class: "flex items-center justify-between mb-3" }, [
-          h[16] || (h[16] = m(
+      p("section", null, [
+        p("div", { class: "flex items-center justify-between mb-3" }, [
+          v[16] || (v[16] = p(
             "h2",
             { class: "text-xs font-semibold text-gray-400 uppercase tracking-wider" },
             "JWKS Discovery Paths",
             -1
             /* CACHED */
           )),
-          m("button", {
+          p("button", {
             onClick: c,
             class: "text-xs text-gray-400 hover:text-blue-400 transition-colors",
             title: "Restore the built-in default JWKS path list"
           }, "↺ Reset to defaults")
         ]),
-        m("textarea", {
+        p("textarea", {
           value: n.jwksPaths.join(`
 `),
-          onInput: h[4] || (h[4] = (V) => n.jwksPaths = V.target.value.split(`
-`).map((p) => p.trim()).filter(Boolean)),
+          onInput: v[4] || (v[4] = (S) => n.jwksPaths = S.target.value.split(`
+`).map((g) => g.trim()).filter(Boolean)),
           rows: "10",
           placeholder: `/.well-known/jwks.json
 /jwks.json`,
           class: "w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-gray-200 text-xs font-mono focus:outline-none focus:border-blue-500 resize-y"
         }, null, 40, q0),
-        m(
+        p(
           "p",
           L0,
-          " One path per line. These are the exact paths probed on the target host for a JWKS. Edit freely — use Reset to restore the built-in defaults (" + S(we(Br).jwksPaths.length) + " paths). ",
+          " One path per line. These are the exact paths probed on the target host for a JWKS. Edit freely — use Reset to restore the built-in defaults (" + R(we(Br).jwksPaths.length) + " paths). ",
           1
           /* TEXT */
         )
       ]),
-      m("section", null, [
-        h[17] || (h[17] = m(
+      p("section", null, [
+        v[17] || (v[17] = p(
           "h2",
           { class: "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3" },
           "Custom Wordlist (Weak Secret)",
           -1
           /* CACHED */
         )),
-        m("textarea", {
+        p("textarea", {
           value: n.customWordlist.join(`
 `),
-          onInput: h[5] || (h[5] = (V) => n.customWordlist = V.target.value.split(`
-`).map((p) => p.trim()).filter(Boolean)),
+          onInput: v[5] || (v[5] = (S) => n.customWordlist = S.target.value.split(`
+`).map((g) => g.trim()).filter(Boolean)),
           rows: "4",
           placeholder: `mysecret
 appkey123`,
           class: "w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-gray-200 text-xs font-mono focus:outline-none focus:border-blue-500 resize-none"
         }, null, 40, N0),
-        h[18] || (h[18] = m(
+        v[18] || (v[18] = p(
           "p",
           { class: "text-xs text-gray-500 mt-1" },
           "One word per line. Appended to the built-in list of ~120 common JWT secrets.",
@@ -15246,32 +15251,32 @@ appkey123`,
           /* CACHED */
         ))
       ]),
-      m("section", null, [
-        h[19] || (h[19] = m(
+      p("section", null, [
+        v[19] || (v[19] = p(
           "h2",
           { class: "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3" },
           "Enabled Attacks",
           -1
           /* CACHED */
         )),
-        m("div", O0, [
-          (C(!0), j(
+        p("div", O0, [
+          (V(!0), j(
             ie,
             null,
-            Ee(we(Dd), (V, p) => (C(), j("label", {
-              key: p,
+            Ee(we(Dd), (S, g) => (V(), j("label", {
+              key: g,
               class: "flex items-center gap-2 cursor-pointer select-none"
             }, [
-              m("input", {
+              p("input", {
                 type: "checkbox",
-                checked: n.enabledAttacks[p] ?? !0,
-                onChange: (x) => n.enabledAttacks[p] = x.target.checked,
+                checked: n.enabledAttacks[g] ?? !0,
+                onChange: (h) => n.enabledAttacks[g] = h.target.checked,
                 class: "accent-blue-500"
               }, null, 40, E0),
-              m(
+              p(
                 "span",
                 I0,
-                S(V),
+                R(S),
                 1
                 /* TEXT */
               )
@@ -15281,20 +15286,20 @@ appkey123`,
           ))
         ])
       ]),
-      m("section", null, [
-        h[21] || (h[21] = m(
+      p("section", null, [
+        v[21] || (v[21] = p(
           "h2",
           { class: "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3" },
           "Experimental",
           -1
           /* CACHED */
         )),
-        m("label", F0, [
-          Rt(m(
+        p("label", F0, [
+          Rt(p(
             "input",
             {
               type: "checkbox",
-              "onUpdate:modelValue": h[6] || (h[6] = (V) => n.enableKeyRecovery = V),
+              "onUpdate:modelValue": v[6] || (v[6] = (S) => n.enableKeyRecovery = S),
               class: "accent-blue-500 mt-0.5"
             },
             null,
@@ -15303,18 +15308,18 @@ appkey123`,
           ), [
             [$l, n.enableKeyRecovery]
           ]),
-          h[20] || (h[20] = m(
+          v[20] || (v[20] = p(
             "span",
             { class: "text-gray-300" },
             [
               ne(" RSA public-key recovery from HTTP history "),
-              m("span", { class: "block text-xs text-gray-500 mt-0.5" }, [
+              p("span", { class: "block text-xs text-gray-500 mt-0.5" }, [
                 ne(" Recovers the public key from 2+ same-host RS/PS JWTs (silentsignal rsa_sign2n method), then runs algorithm-confusion with it. Off by default. The GCD of two ~16 MB integers (sig"),
-                m("sup", null, "65537"),
+                p("sup", null, "65537"),
                 ne(") is O(n²) in a JS runtime with no GMP, so for 2048-bit/e=65537 keys this can take a "),
-                m("strong", null, "very long time"),
+                p("strong", null, "very long time"),
                 ne(" (tens of minutes to hours) and blocks the backend while it runs. For fast results, run "),
-                m("code", null, "rsa_sign2n"),
+                p("code", null, "rsa_sign2n"),
                 ne(" externally and paste the recovered key into the Public Key field above. e=3 keys recover quickly. ")
               ])
             ],
@@ -15323,31 +15328,31 @@ appkey123`,
           ))
         ]),
         I(" gmp-wasm viability self-test "),
-        m("div", M0, [
-          m("button", {
+        p("div", M0, [
+          p("button", {
             onClick: u,
             disabled: i.value,
             class: "px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-100 text-xs rounded transition-colors disabled:opacity-50",
             title: "Check whether gmp-wasm (fast GMP-backed recovery) can run in this backend, and benchmark a full 2048-bit recovery"
-          }, S(i.value ? "Testing…" : "Test gmp-wasm (RSA recovery engine)"), 9, W0),
-          a.value ? (C(), j(
+          }, R(i.value ? "Testing…" : "Test gmp-wasm (RSA recovery engine)"), 9, W0),
+          a.value ? (V(), j(
             "p",
             {
               key: 0,
               class: he(["text-xs mt-2 font-mono break-words", l.value ? "text-green-400" : "text-red-400"])
             },
-            S(l.value ? "✓ " : "✗ ") + S(a.value),
+            R(l.value ? "✓ " : "✗ ") + R(a.value),
             3
             /* TEXT, CLASS */
           )) : I("v-if", !0)
         ])
       ]),
-      m("div", J0, [
-        m("button", {
-          onClick: v,
+      p("div", J0, [
+        p("button", {
+          onClick: x,
           class: "px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors"
         }, " Save "),
-        s.value ? (C(), j("span", H0, "✓ Saved")) : I("v-if", !0)
+        s.value ? (V(), j("span", H0, "✓ Saved")) : I("v-if", !0)
       ])
     ]));
   }
@@ -15366,58 +15371,58 @@ appkey123`,
     function a() {
       n.value = null, s.value = null, o.value = null, i.value = !1;
     }
-    function l(v) {
-      a(), n.value = v;
+    function l(x) {
+      a(), n.value = x;
     }
-    function u(v) {
-      a(), s.value = v;
+    function u(x) {
+      a(), s.value = x;
     }
-    function c(v) {
-      a(), o.value = v;
+    function c(x) {
+      a(), o.value = x;
     }
     function d() {
       a(), i.value = !0;
     }
-    const g = [
+    const b = [
       { id: "results", label: "Results" },
       { id: "config", label: "Configuration" }
     ];
-    return (v, k) => {
-      var h, V;
-      return C(), j("div", Z0, [
+    return (x, k) => {
+      var v, S;
+      return V(), j("div", Z0, [
         I(" Top bar "),
-        m("div", G0, [
-          k[0] || (k[0] = m(
+        p("div", G0, [
+          k[0] || (k[0] = p(
             "span",
             { class: "text-base font-bold text-yellow-400 mr-2" },
             "🔑 JWT Attacker",
             -1
             /* CACHED */
           )),
-          (C(), j(
+          (V(), j(
             ie,
             null,
-            Ee(g, (p) => m("button", {
-              key: p.id,
-              onClick: (x) => r.value = p.id,
+            Ee(b, (g) => p("button", {
+              key: g.id,
+              onClick: (h) => r.value = g.id,
               class: he([
                 "px-3 py-1 rounded text-xs font-medium transition-colors",
-                r.value === p.id ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"
+                r.value === g.id ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"
               ])
-            }, S(p.label), 11, B0)),
+            }, R(g.label), 11, B0)),
             64
             /* STABLE_FRAGMENT */
           ))
         ]),
         I(" Results tab: split pane "),
-        Rt(m(
+        Rt(p(
           "div",
           D0,
           [
-            m("div", Y0, [
+            p("div", Y0, [
               Ke(Rf, {
-                "selected-id": (h = n.value) == null ? void 0 : h.id,
-                "selected-endpoint-url": (V = s.value) == null ? void 0 : V.url,
+                "selected-id": (v = n.value) == null ? void 0 : v.id,
+                "selected-endpoint-url": (S = s.value) == null ? void 0 : S.url,
                 "selected-spoof": !!o.value,
                 "selected-recovery": i.value,
                 onSelect: l,
@@ -15426,17 +15431,17 @@ appkey123`,
                 onSelectRecovery: d
               }, null, 8, ["selected-id", "selected-endpoint-url", "selected-spoof", "selected-recovery"])
             ]),
-            m("div", A0, [
-              i.value ? (C(), er(v0, {
+            p("div", A0, [
+              i.value ? (V(), er(v0, {
                 key: 0,
                 session: we(t).activeSession
-              }, null, 8, ["session"])) : o.value ? (C(), er(e0, {
+              }, null, 8, ["session"])) : o.value ? (V(), er(e0, {
                 key: 1,
                 spoof: o.value
-              }, null, 8, ["spoof"])) : s.value ? (C(), er(Ip, {
+              }, null, 8, ["spoof"])) : s.value ? (V(), er(Ip, {
                 key: 2,
                 endpoint: s.value
-              }, null, 8, ["endpoint"])) : (C(), er(pp, {
+              }, null, 8, ["endpoint"])) : (V(), er(pp, {
                 key: 3,
                 result: n.value ?? null
               }, null, 8, ["result"]))
@@ -15448,7 +15453,7 @@ appkey123`,
           [Cs, r.value === "results"]
         ]),
         I(" Config tab "),
-        Rt(m(
+        Rt(p(
           "div",
           Q0,
           [
@@ -15537,9 +15542,9 @@ async function nm(e, t) {
   }, s = /* @__PURE__ */ new Map();
   for (let l = 0; l < r.length; l++) {
     const u = r[l], c = n(u.headerB64), d = [];
-    for (const v of ["jwk", "jku", "x5u", "x5c"]) v in c && d.push(v);
-    const g = `${u.headerB64}.${u.payloadB64}`;
-    s.set(g, (s.get(g) ?? 0) + 1), t(
+    for (const x of ["jwk", "jku", "x5u", "x5c"]) x in c && d.push(x);
+    const b = `${u.headerB64}.${u.payloadB64}`;
+    s.set(b, (s.get(b) ?? 0) + 1), t(
       `candidate ${l + 1}: ${u.alg} kid=${c.kid ?? "—"} sig ${u.signatureB64.length} chars (…${u.signatureB64.slice(-8)})` + (d.length ? ` ⚠ header has ${d.join("/")} (looks like a forged/probe token)` : "")
     );
   }
@@ -15558,18 +15563,18 @@ async function nm(e, t) {
         }
         t(`Recovering ${u} key from JWT pair ${c + 1}+${d + 1} of ${l.length}…`);
         try {
-          const g = await tm(l[c], l[d]);
-          for (const v of [3, 65537]) {
-            t(`e=${v}: computing sig^e − EM and their GCD (Web Worker)…`);
-            const k = Date.now(), h = await z0(g.s0, g.s1, g.m0, g.m1, v), V = h === "0" ? 0 : h.replace(/^0+/, "").length * 4;
-            t(`e=${v}: GCD ≈ ${V} bits (${Math.round((Date.now() - k) / 1e3)}s). ${V < 512 ? "→ pair likely NOT same key" : "→ extracting modulus"}`);
-            const p = rm(h, g, v);
-            if (p)
-              return t(`✓ Recovered ${p.bits}-bit modulus (e=${v}).`), [p];
-            t(`e=${v}: no valid modulus from GCD.`);
+          const b = await tm(l[c], l[d]);
+          for (const x of [3, 65537]) {
+            t(`e=${x}: computing sig^e − EM and their GCD (Web Worker)…`);
+            const k = Date.now(), v = await z0(b.s0, b.s1, b.m0, b.m1, x), S = v === "0" ? 0 : v.replace(/^0+/, "").length * 4;
+            t(`e=${x}: GCD ≈ ${S} bits (${Math.round((Date.now() - k) / 1e3)}s). ${S < 512 ? "→ pair likely NOT same key" : "→ extracting modulus"}`);
+            const g = rm(v, b, x);
+            if (g)
+              return t(`✓ Recovered ${g.bits}-bit modulus (e=${x}).`), [g];
+            t(`e=${x}: no valid modulus from GCD.`);
           }
-        } catch (g) {
-          t(`Pair ${c + 1}+${d + 1} failed: ${g.message}`);
+        } catch (b) {
+          t(`Pair ${c + 1}+${d + 1} failed: ${b.message}`);
         }
       }
   }
@@ -15611,15 +15616,15 @@ function sm(e) {
       if (d.length) {
         c("Recovered public key — launching algorithm-confusion attacks with it.");
         for (const k of d) o.addRecoveredKey(i, `${k.bits}-bit modulus (e=${k.e})`);
-        const g = await e.backend.runRecoveredConfusion(
+        const b = await e.backend.runRecoveredConfusion(
           a,
           d.map((k) => ({ nHex: k.nHex, e: k.e })),
           i
-        ), v = (g == null ? void 0 : g.pems) ?? [];
+        ), x = (b == null ? void 0 : b.pems) ?? [];
         o.setRecoveredKeys(
           i,
-          d.map((k, h) => ({ pem: v[h] ?? "", bits: k.bits, e: k.e }))
-        ), c(`Sent ${(g == null ? void 0 : g.count) ?? 0} confusion attack(s) using the recovered key.`);
+          d.map((k, v) => ({ pem: x[v] ?? "", bits: k.bits, e: k.e }))
+        ), c(`Sent ${(b == null ? void 0 : b.count) ?? 0} confusion attack(s) using the recovered key.`);
       }
     } catch (d) {
       c(`Recovery error: ${d.message}`);

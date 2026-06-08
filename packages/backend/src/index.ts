@@ -487,11 +487,10 @@ async function attackJwt(
     // the candidate JWTs to the FRONTEND, which recovers the key with gmp-wasm and
     // then calls back `runRecoveredConfusion` to launch the confusion attack.
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
-      const host = request.getHost();
       const historyJWTs = recoveryCandidates;
       sdk.api.send("jwt-key-recovery-progress", {
         sessionId,
-        message: `Key recovery: found ${historyJWTs.length} distinct RS/PS JWT(s) for ${host}.`,
+        message: `Key recovery: found ${historyJWTs.length} distinct RS/PS JWT(s) in HTTP history.`,
       });
       if (historyJWTs.length < 2) {
         sdk.api.send("jwt-key-recovery-progress", {
