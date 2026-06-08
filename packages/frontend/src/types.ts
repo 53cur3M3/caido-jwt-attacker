@@ -52,6 +52,12 @@ export interface SpoofInfo {
   selfVerified: boolean;   // signed token validates against the configured JWKS
 }
 
+export interface RecoveryInfo {
+  candidates: string[];   // full JWT strings scanned from history
+  originalJWT: string;    // the token being attacked
+  keys: Array<{ pem: string; bits: number; e: number }>; // recovered public key(s)
+}
+
 export interface AttackSession {
   sessionId: string;
   requestId: string;
@@ -63,6 +69,7 @@ export interface AttackSession {
   recoveredKeys: string[];
   discoveredEndpoints: DiscoveredEndpoint[];
   spoof?: SpoofInfo;
+  recovery?: RecoveryInfo;
   keyRecoveryLog: string[];
 }
 

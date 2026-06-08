@@ -214,6 +214,29 @@ export function encodeBitString(data: Buffer): Buffer {
   return Buffer.concat([Buffer.from([0x03]), encodeLength(inner.length), inner]);
 }
 
+// Build a SubjectPublicKeyInfo (X.509) PEM from an RSA modulus n and exponent e.
+export function bigintToPublicKeyPem(n: bigint, e: bigint = 65537n): string {
+  const toBuf = (x: bigint) => {
+    const hex = x.toString(16);
+    return Buffer.from(hex.length % 2 ? "0" + hex : hex, "hex");
+  };
+  const nBuf = toBuf(n);
+  const eBuf = toBuf(e);
+  // Prepend 0x00 if the high bit is set (DER INTEGER must be non-negative).
+  const nDer = nBuf[0] & 0x80 ? Buffer.concat([Buffer.from([0x00]), nBuf]) : nBuf;
+  const eDer = eBuf[0] & 0x80 ? Buffer.concat([Buffer.from([0x00]), eBuf]) : eBuf;
+
+  const rsaKeySeq = encodeSequence(Buffer.concat([encodeInteger(nDer), encodeInteger(eDer)]));
+  const algId = encodeSequence(Buffer.concat([
+    Buffer.from("06092a864886f70d010101", "hex"), // rsaEncryption OID
+    Buffer.from("0500", "hex"),                    // NULL params
+  ]));
+  const spki = encodeSequence(Buffer.concat([algId, encodeBitString(rsaKeySeq)]));
+  const b64 = spki.toString("base64");
+  const lines = b64.match(/.{1,64}/g)!.join("\n");
+  return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----\n`;
+}
+
 function derReadLength(buf: Buffer, offset: number): { len: number; next: number } {
   const first = buf[offset];
   if (first < 0x80) return { len: first, next: offset + 1 };

@@ -184,7 +184,7 @@ import { ref, reactive, watch } from "vue";
 import { useConfigStore } from "../stores/config.js";
 import { ATTACK_LABELS, DEFAULT_CONFIG } from "../types.js";
 import type { PluginConfig } from "../types.js";
-import { gmpSelfTest } from "../recovery/gmp.js";
+import { selfTest as gmpWorkerSelfTest } from "../recovery/recoverClient.js";
 
 const store = useConfigStore();
 // Deep-clone so the local form never shares nested objects (e.g. enabledAttacks)
@@ -203,8 +203,16 @@ async function runGmpTest() {
   gmpTesting.value = true;
   gmpResult.value = "";
   try {
-    // Run gmp-wasm in the FRONTEND (the backend runtime has no WebAssembly).
-    const r = await gmpSelfTest();
+    // Run gmp-wasm in the FRONTEND, inside the recovery Web Worker (the backend
+    // runtime has no WebAssembly).
+    const sample = (() => {
+      const b = new Uint8Array(256);
+      crypto.getRandomValues(b);
+      let s = "";
+      for (const x of b) s += x.toString(16).padStart(2, "0");
+      return s;
+    })();
+    const r = await gmpWorkerSelfTest(sample);
     gmpOk.value = !!r?.ok;
     gmpResult.value = r?.message ?? "No response.";
   } catch (e) {

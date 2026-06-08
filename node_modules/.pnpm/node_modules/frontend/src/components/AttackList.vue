@@ -57,15 +57,20 @@
       <p v-for="(msg, i) in session.errors" :key="i" class="font-mono break-all">{{ msg }}</p>
     </div>
 
-    <!-- Key recovery / discovery log -->
-    <div v-if="session?.keyRecoveryLog.length" class="px-3 py-1.5 bg-yellow-950 border-b border-yellow-800 text-xs text-yellow-300 max-h-40 overflow-y-auto">
-      <p class="font-semibold mb-0.5">🔑 Key discovery / recovery</p>
+    <!-- Key recovery / discovery log (click → right pane) -->
+    <div
+      v-if="session?.keyRecoveryLog.length"
+      @click="emit('selectRecovery')"
+      :class="['px-3 py-1.5 border-b text-xs max-h-40 overflow-y-auto cursor-pointer transition-colors',
+        session.recovery?.keys.length ? 'bg-green-950 border-green-800 text-green-300' : 'bg-yellow-950 border-yellow-800 text-yellow-300',
+        selectedRecovery ? 'ring-1 ring-inset ring-current' : '']"
+    >
+      <p class="font-semibold mb-0.5">
+        🔑 Key discovery / recovery
+        <span v-if="session.recovery?.keys.length">— ✓ {{ session.recovery.keys.length }} key(s) recovered</span>
+        · click for details &amp; jwt_tool repro
+      </p>
       <p v-for="(msg, i) in session.keyRecoveryLog" :key="i" class="break-all leading-snug">{{ msg }}</p>
-    </div>
-
-    <!-- Recovered keys notice -->
-    <div v-if="session?.recoveredKeys.length" class="px-3 py-1.5 bg-green-950 border-b border-green-800 text-xs text-green-300">
-      ✓ Recovered {{ session.recoveredKeys.length }} public key(s) from HTTP history
     </div>
 
     <!-- JKU/X5U spoofing: endpoint check + JWKS to host (click → right pane) -->
@@ -130,11 +135,12 @@ import { useAttackStore } from "../stores/attacks.js";
 import type { AttackResult, DiscoveredEndpoint, SpoofInfo } from "../types.js";
 import { techniqueColor, statusColor } from "../types.js";
 
-const props = defineProps<{ selectedId?: string; selectedEndpointUrl?: string; selectedSpoof?: boolean }>();
+const props = defineProps<{ selectedId?: string; selectedEndpointUrl?: string; selectedSpoof?: boolean; selectedRecovery?: boolean }>();
 const emit = defineEmits<{
   (e: "select", result: AttackResult): void;
   (e: "selectEndpoint", endpoint: DiscoveredEndpoint): void;
   (e: "selectSpoof", spoof: SpoofInfo): void;
+  (e: "selectRecovery"): void;
 }>();
 
 const store = useAttackStore();

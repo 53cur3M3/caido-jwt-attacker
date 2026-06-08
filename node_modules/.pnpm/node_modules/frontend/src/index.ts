@@ -8,6 +8,7 @@ import type { API, BackendEvents } from "../../backend/src/index.js";
 import App from "./App.vue";
 import { useConfigStore } from "./stores/config.js";
 import { useAttackStore } from "./stores/attacks.js";
+import { recoverFromCandidates } from "./recovery/recover.js";
 
 export type CaidoSDK = SDK<API, BackendEvents>;
 
@@ -68,6 +69,41 @@ export function init(sdk: CaidoSDK) {
 
   sdk.backend.onEvent("jwks-found", ({ sessionId, url, source, keyCount, content, pems }) => {
     attackStore.addDiscoveredEndpoint(sessionId, { url, source, keyCount, content, pems });
+  });
+
+  // Backend has no WebAssembly, so RSA key recovery runs HERE (gmp-wasm in a Web
+  // Worker). On success, hand the modulus back to the backend to launch the
+  // algorithm-confusion attack with it.
+  sdk.backend.onEvent("jwt-recovery-candidates", async ({ sessionId, requestId, originalJWT, candidates }) => {
+    const log = (m: string) => attackStore.logKeyRecovery(sessionId, m);
+    // Store the full candidate tokens so the recovery detail pane can show them.
+    attackStore.setRecoveryCandidates(
+      sessionId,
+      candidates.map((c) => `${c.headerB64}.${c.payloadB64}.${c.signatureB64}`),
+      originalJWT
+    );
+    try {
+      log(`Frontend gmp-wasm recovery: ${candidates.length} candidate JWT(s). This runs in a background worker…`);
+      const keys = await recoverFromCandidates(candidates, log);
+      if (keys.length) {
+        log("Recovered public key — launching algorithm-confusion attacks with it.");
+        for (const key of keys) attackStore.addRecoveredKey(sessionId, `${key.bits}-bit modulus (e=${key.e})`);
+        const res = await sdk.backend.runRecoveredConfusion(
+          requestId,
+          keys.map((k) => ({ nHex: k.nHex, e: k.e })),
+          sessionId
+        );
+        // Store recovered key PEM(s) for the detail pane / jwt_tool repro.
+        const pems = res?.pems ?? [];
+        attackStore.setRecoveredKeys(
+          sessionId,
+          keys.map((k, i) => ({ pem: pems[i] ?? "", bits: k.bits, e: k.e }))
+        );
+        log(`Sent ${res?.count ?? 0} confusion attack(s) using the recovered key.`);
+      }
+    } catch (e) {
+      log(`Recovery error: ${(e as Error).message}`);
+    }
   });
 
   // ─── Register context menu commands ─────────────────────────────────────

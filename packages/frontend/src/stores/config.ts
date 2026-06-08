@@ -7,7 +7,6 @@ interface ConfigSDK {
   storage: { get: (k: string) => Promise<unknown>; set: (k: string, v: unknown) => Promise<void> };
   backend: {
     generateSpoofKeyPair: () => Promise<{ privateKeyPem: string; jwksJson: string }>;
-    gmpSelfTest: () => Promise<{ ok: boolean; webAssembly: boolean; message: string }>;
   };
 }
 
@@ -61,10 +60,5 @@ export const useConfigStore = defineStore("config", () => {
     await regenerateSpoofKeyPair();
   }
 
-  async function gmpSelfTest() {
-    if (!sdk) return { ok: false, webAssembly: false, message: "SDK not ready." };
-    return sdk.backend.gmpSelfTest();
-  }
-
-  return { config, regenerating, setSDK, load, save, update, regenerateSpoofKeyPair, ensureSpoofKeyPair, gmpSelfTest };
+  return { config, regenerating, setSDK, load, save, update, regenerateSpoofKeyPair, ensureSpoofKeyPair };
 });
