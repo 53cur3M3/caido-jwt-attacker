@@ -13196,8 +13196,9 @@ const Gc = {
     nullSig: !0,
     algConfusion: !0,
     embeddedJwk: !0,
-    jkuSpoof: !0,
-    x5uSpoof: !0,
+    // Off by default: these require the user to configure & host a JWKS URL first.
+    jkuSpoof: !1,
+    x5uSpoof: !1,
     kidInject: !0,
     claimTamper: !0,
     weakSecret: !0

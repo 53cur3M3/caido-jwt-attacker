@@ -1059,8 +1059,9 @@ var DEFAULT_CONFIG = {
     nullSig: true,
     algConfusion: true,
     embeddedJwk: true,
-    jkuSpoof: true,
-    x5uSpoof: true,
+    // Off by default: these require the user to configure & host a JWKS URL first.
+    jkuSpoof: false,
+    x5uSpoof: false,
     kidInject: true,
     claimTamper: true,
     weakSecret: true
