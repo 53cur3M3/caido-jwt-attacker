@@ -110,11 +110,15 @@ export interface KeyRecoveryResult {
 export async function recoverRSAPublicKey(
   jwt0: ParsedJWT,
   jwt1: ParsedJWT,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  budgetMs = 240000 // ~4 minutes total; e=65537 over 16 MB integers is O(n²) here
 ): Promise<KeyRecoveryResult> {
   const alg = jwt0.header.alg as string;
   if (!ALG_TO_HASH[alg]) throw new Error(`Unsupported algorithm: ${alg}`);
   const hashAlg = ALG_TO_HASH[alg];
+
+  const deadline = Date.now() + budgetMs;
+  const abort = () => Date.now() > deadline;
 
   const sig0 = b64urlDecode(jwt0.signatureB64);
   const sig1 = b64urlDecode(jwt1.signatureB64);
@@ -132,17 +136,18 @@ export async function recoverRSAPublicKey(
   const m0bn = BN.fromBigInt(m0);
   const m1bn = BN.fromBigInt(m1);
 
-  // Try the common public exponents, smallest first (e=3 is cheap).
+  // Try the common public exponents, smallest first (e=3 is cheap; e=65537 is
+  // heavy — it runs under the time budget and aborts cleanly if it can't finish).
   for (const e of [3n, 65537n]) {
     try {
-      onProgress?.(`e=${e}: computing sig^e (~16 MB integers; this can take a few minutes)…`);
-      const p0 = BN.pow(s0bn, e);
-      const p1 = BN.pow(s1bn, e);
+      onProgress?.(`e=${e}: computing sig^e…`);
+      const p0 = BN.pow(s0bn, e, undefined, abort);
+      const p1 = BN.pow(s1bn, e, undefined, abort);
       if (BN.cmp(p0, m0bn) < 0 || BN.cmp(p1, m1bn) < 0) continue;
       const A = BN.sub(p0, m0bn);
       const B = BN.sub(p1, m1bn);
 
-      onProgress?.(`e=${e}: computing GCD (the slow step — several minutes)…`);
+      onProgress?.(`e=${e}: computing GCD (the slow step)…`);
       let lastPct = -1;
       const g = BN.gcd(A, B, (remaining, start) => {
         const pct = Math.min(99, Math.floor((1 - remaining / start) * 100));
@@ -150,7 +155,7 @@ export async function recoverRSAPublicKey(
           lastPct = pct;
           onProgress?.(`e=${e}: GCD ${pct}%…`);
         }
-      });
+      }, abort);
       const gInt = BN.toBigInt(g); // k·n — a few thousand bits, fits native
 
       // Strip a small cofactor and validate (jwt_forgery: my_gcd in 1..99).

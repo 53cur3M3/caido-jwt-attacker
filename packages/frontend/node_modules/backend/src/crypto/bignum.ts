@@ -16,7 +16,8 @@
  * number) while each limb (and limb-product) stays far under the BigInt cap.
  */
 
-const LIMB_BITS = 1n << 21n;        // 2,097,152 bits per limb (256 KB); product 512 KB
+const LIMB_BITS = 1n << 16n;        // 65,536 bits per limb (8 KB); product 16 KB
+                                    // Kept well under runtime BigInt caps so recovery can run.
 
 // BASE/MASK are huge (~256 KB) BigInts. They MUST NOT be created at module load:
 // allocating one at import would crash the whole backend on runtimes with a low
@@ -281,7 +282,12 @@ const NATIVE_FINISH_BITS = 1n << 15n; // 32,768 bits
 
 // Lehmer GCD using a bounded leading-bit window. Returns gcd(a, b) as a Big.
 // onProgress(remainingBits, startBits) fires periodically during the long reduction.
-export function gcd(a0: Big, b0: Big, onProgress?: (remaining: number, start: number) => void): Big {
+export function gcd(
+  a0: Big,
+  b0: Big,
+  onProgress?: (remaining: number, start: number) => void,
+  abort?: () => boolean
+): Big {
   ensureInit();
   let u = a0.slice();
   let v = b0.slice();
@@ -290,7 +296,9 @@ export function gcd(a0: Big, b0: Big, onProgress?: (remaining: number, start: nu
   const startBits = Number(bitLength(u));
   let iter = 0;
   while (bitLength(u) > NATIVE_FINISH_BITS) {
-    if (onProgress && (iter++ & 1023) === 0) onProgress(Number(bitLength(u)), startBits);
+    if ((iter & 255) === 0 && abort?.()) throw new Error("time budget exceeded");
+    if (onProgress && (iter & 1023) === 0) onProgress(Number(bitLength(u)), startBits);
+    iter++;
     // Approximate the leading WINDOW bits of both numbers (aligned to u).
     const bu = bitLength(u);
     const shift = bu > WINDOW ? bu - WINDOW : 0n;
@@ -331,7 +339,12 @@ export function gcd(a0: Big, b0: Big, onProgress?: (remaining: number, start: nu
 
 // base^exp (exp a native BigInt) as a Big. Square-and-multiply; never forms a
 // single oversized native BigInt.
-export function pow(base: Big, exp: bigint, onProgress?: (done: number, total: number) => void): Big {
+export function pow(
+  base: Big,
+  exp: bigint,
+  onProgress?: (done: number, total: number) => void,
+  abort?: () => boolean
+): Big {
   ensureInit();
   let result: Big = [1n];
   let b = base.slice();
@@ -339,6 +352,7 @@ export function pow(base: Big, exp: bigint, onProgress?: (done: number, total: n
   const total = exp.toString(2).length;
   let done = 0;
   while (e > 0n) {
+    if (abort?.()) throw new Error("time budget exceeded");
     if (e & 1n) result = mul(result, b);
     e >>= 1n;
     if (e > 0n) b = mul(b, b);

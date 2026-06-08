@@ -57,9 +57,10 @@
       <p v-for="(msg, i) in session.errors" :key="i" class="font-mono break-all">{{ msg }}</p>
     </div>
 
-    <!-- Key recovery log -->
-    <div v-if="session?.keyRecoveryLog.length" class="px-3 py-1.5 bg-yellow-950 border-b border-yellow-800 text-xs text-yellow-300 max-h-16 overflow-y-auto">
-      <p v-for="(msg, i) in session.keyRecoveryLog" :key="i">{{ msg }}</p>
+    <!-- Key recovery / discovery log -->
+    <div v-if="session?.keyRecoveryLog.length" class="px-3 py-1.5 bg-yellow-950 border-b border-yellow-800 text-xs text-yellow-300 max-h-40 overflow-y-auto">
+      <p class="font-semibold mb-0.5">🔑 Key discovery / recovery</p>
+      <p v-for="(msg, i) in session.keyRecoveryLog" :key="i" class="break-all leading-snug">{{ msg }}</p>
     </div>
 
     <!-- Recovered keys notice -->

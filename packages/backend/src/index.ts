@@ -242,17 +242,36 @@ async function attackJwt(
     }
 
     if (cfg.enabledAttacks.algConfusion) {
-      await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
-        parsed,
-        request.getHost(),
-        request.getPort(),
-        request.getTls(),
-        cfg,
-        [], // first wave: no recovered keys yet — recovery runs as a second wave below
-        // Surface every discovered key source so the analyst doesn't miss it.
-        (found) => sdk.api.send("jwks-found", { sessionId, ...found }),
-        httpGet
-      ));
+      const isAsym = /^(RS|PS|ES)/.test(parsed.header.alg as string);
+      if (!isAsym) {
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: `Algorithm confusion skipped: token alg is ${parsed.header.alg} (only RS/PS/ES tokens can be downgraded to HMAC).`,
+        });
+      } else {
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: `Algorithm confusion: probing ${request.getHost()} for exposed JWKS & certificate key endpoints…`,
+        });
+        let foundCount = 0;
+        await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
+          parsed,
+          request.getHost(),
+          request.getPort(),
+          request.getTls(),
+          cfg,
+          [], // first wave: no recovered keys yet — recovery runs as a second wave below
+          // Surface every discovered key source so the analyst doesn't miss it.
+          (found) => { foundCount++; sdk.api.send("jwks-found", { sessionId, ...found }); },
+          httpGet
+        ));
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: foundCount > 0
+            ? `Algorithm confusion: found ${foundCount} key endpoint(s) — see the cyan banner.`
+            : `Algorithm confusion: no exposed JWKS/cert endpoints found on ${request.getHost()} (expected for "no exposed key" targets — use key recovery).`,
+        });
+      }
     }
 
     sdk.console.log(`[JWT Attacker] built ${attacks.length} attack variant(s)`);
@@ -325,13 +344,34 @@ async function attackJwt(
     // performance, so it is opt-in (cfg.enableKeyRecovery) and runs only after
     // the main attacks have already been sent.
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
-      try {
-        const host = request.getHost();
-        const historyJWTs = recoveryCandidates;
+      const host = request.getHost();
+      const historyJWTs = recoveryCandidates;
+      const fullTok = (j: ParsedJWT) => `${j.headerB64}.${j.payloadB64}.${j.signatureB64}`;
+      // External fallback: rsa_sign2n (GMP-backed) recovers in seconds where the
+      // in-browser O(n²) GCD can't. Shown whenever in-runtime recovery doesn't win.
+      const emitExternalHint = () => {
         if (historyJWTs.length >= 2) {
           sdk.api.send("jwt-key-recovery-progress", {
             sessionId,
-            message: `Found ${historyJWTs.length} distinct RSA JWT(s) from ${host} — attempting public-key recovery (this can take a while)…`,
+            message: `For fast recovery run rsa_sign2n externally:  python3 jwt_forgery.py "${fullTok(historyJWTs[0])}" "${fullTok(historyJWTs[1])}"  — then paste the recovered public key into Configuration → Public Key and re-run with Algorithm Confusion.`,
+          });
+        }
+      };
+      try {
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: `Key recovery: scanned HTTP history of ${host} — found ${historyJWTs.length} distinct RS/PS JWT(s).`,
+        });
+        if (historyJWTs.length < 2) {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: "Key recovery needs ≥2 DISTINCT same-host RS/PS JWTs (different signatures, same key). " +
+              "Capture more (e.g. log in again so the app issues a second token), then re-run. Skipping recovery.",
+          });
+        } else {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: "Attempting public-key recovery (e=3 is fast; e=65537 runs under a ~4-minute budget and aborts if it can't finish — it's O(n²) without GMP)…",
           });
           const keyResults = await recoverPublicKeyFromJWTs(
             historyJWTs,
@@ -347,10 +387,17 @@ async function attackJwt(
               sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 1 });
               await sendAttacks(extra);
             }
+          } else {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: "In-browser recovery did not finish (e=65537 is too slow here).",
+            });
+            emitExternalHint();
           }
         }
       } catch (e) {
-        errors.push(`[keyRecovery] ${(e as Error).message}`);
+        sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Key recovery stopped: ${(e as Error).message}.` });
+        emitExternalHint();
         sdk.console.log(`[JWT Attacker] key recovery failed: ${(e as Error).message}`);
       }
     }

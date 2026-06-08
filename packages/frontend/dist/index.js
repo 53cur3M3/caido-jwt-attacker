@@ -13254,7 +13254,7 @@ const Dd = { class: "h-full flex flex-col overflow-hidden" }, Vd = { class: "px-
   class: "px-3 py-1.5 bg-red-950 border-b border-red-800 text-xs text-red-300 max-h-28 overflow-y-auto"
 }, tf = { class: "font-semibold mb-0.5" }, rf = {
   key: 3,
-  class: "px-3 py-1.5 bg-yellow-950 border-b border-yellow-800 text-xs text-yellow-300 max-h-16 overflow-y-auto"
+  class: "px-3 py-1.5 bg-yellow-950 border-b border-yellow-800 text-xs text-yellow-300 max-h-40 overflow-y-auto"
 }, of = {
   key: 4,
   class: "px-3 py-1.5 bg-green-950 border-b border-green-800 text-xs text-green-300"
@@ -13459,14 +13459,24 @@ const Dd = { class: "h-full flex flex-col overflow-hidden" }, Vd = { class: "px-
             /* KEYED_FRAGMENT */
           ))
         ])) : R("v-if", !0),
-        R(" Key recovery log "),
+        R(" Key recovery / discovery log "),
         (g = n.value) != null && g.keyRecoveryLog.length ? (O(), I("div", rf, [
+          u[3] || (u[3] = b(
+            "p",
+            { class: "font-semibold mb-0.5" },
+            "🔑 Key discovery / recovery",
+            -1
+            /* CACHED */
+          )),
           (O(!0), I(
             ne,
             null,
             De(n.value.keyRecoveryLog, (_, v) => (O(), I(
               "p",
-              { key: v },
+              {
+                key: v,
+                class: "break-all leading-snug"
+              },
               P(_),
               1
               /* TEXT */
