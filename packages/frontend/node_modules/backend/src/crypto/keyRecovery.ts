@@ -18,6 +18,7 @@
 import { createHash } from "crypto";
 import { b64urlDecode } from "./jwt.js";
 import { encodeSequence, encodeInteger, encodeBitString } from "./rsa.js";
+import * as BN from "./bignum.js";
 import type { ParsedJWT } from "../types.js";
 
 // DER DigestInfo prefixes for PKCS#1 v1.5 encoding (rfc 3447 §9.2)
@@ -33,11 +34,16 @@ const ALG_TO_HASH: Record<string, string> = {
   RS512: "sha512",
 };
 
-function gcd(a: bigint, b: bigint): bigint {
-  while (b !== 0n) {
-    [a, b] = [b, a % b];
+function modpow(base: bigint, exp: bigint, mod: bigint): bigint {
+  if (mod === 1n) return 0n;
+  let result = 1n;
+  base %= mod;
+  while (exp > 0n) {
+    if (exp & 1n) result = (result * base) % mod;
+    exp >>= 1n;
+    base = (base * base) % mod;
   }
-  return a < 0n ? -a : a;
+  return result;
 }
 
 function buildEM(hash: Buffer, hashAlg: string, keyLen: number): bigint {
@@ -87,76 +93,89 @@ function bigintToPublicKeyPem(n: bigint, e: bigint = 65537n): string {
   return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----\n`;
 }
 
-const SMALL_PRIMES = [
-  2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n, 41n, 43n, 47n,
-  53n, 59n, 61n, 67n, 71n, 73n, 79n, 83n, 89n, 97n, 101n, 103n, 107n, 109n,
-  113n, 127n, 131n, 137n, 139n, 149n, 151n, 157n, 163n, 167n, 173n, 179n,
-  181n, 191n, 193n, 197n, 199n, 211n, 223n, 227n, 229n, 233n, 239n, 241n,
-];
-
-function stripSmallFactors(n: bigint): bigint {
-  for (const p of SMALL_PRIMES) {
-    while (n % p === 0n) n /= p;
-  }
-  return n;
-}
-
 export interface KeyRecoveryResult {
   publicKeyPem: string;
   modulusBits: number;
 }
 
+/**
+ * Recover the RSA public key from two signatures (silentsignal/rsa_sign2n's
+ * jwt_forgery.py algorithm): for e in [3, 65537],
+ *   n | gcd(sig0^e − EM0, sig1^e − EM1)
+ * then strip a small cofactor (1..99) and validate sig0^e ≡ EM0 (mod n).
+ *
+ * sig^65537 is a ~16 MB integer that the runtime's native BigInt cannot hold, so
+ * the powers and GCD are done with the limb-based bignum (BN) + Lehmer GCD.
+ */
 export async function recoverRSAPublicKey(
+  jwt0: ParsedJWT,
   jwt1: ParsedJWT,
-  jwt2: ParsedJWT,
   onProgress?: (msg: string) => void
 ): Promise<KeyRecoveryResult> {
-  const alg = jwt1.header.alg as string;
+  const alg = jwt0.header.alg as string;
   if (!ALG_TO_HASH[alg]) throw new Error(`Unsupported algorithm: ${alg}`);
-
   const hashAlg = ALG_TO_HASH[alg];
 
+  const sig0 = b64urlDecode(jwt0.signatureB64);
   const sig1 = b64urlDecode(jwt1.signatureB64);
-  const sig2 = b64urlDecode(jwt2.signatureB64);
-  const keyLen = sig1.length; // e.g. 256 for 2048-bit RSA
+  const keyLen = sig0.length; // e.g. 256 for 2048-bit RSA
 
-  onProgress?.(`Signature length: ${keyLen * 8} bits, computing hashes…`);
+  const h0 = createHash(hashAlg).update(`${jwt0.headerB64}.${jwt0.payloadB64}`).digest();
+  const h1 = createHash(hashAlg).update(`${jwt1.headerB64}.${jwt1.payloadB64}`).digest();
+  const m0 = buildEM(h0, hashAlg, keyLen);
+  const m1 = buildEM(h1, hashAlg, keyLen);
 
-  const msg1 = `${jwt1.headerB64}.${jwt1.payloadB64}`;
-  const msg2 = `${jwt2.headerB64}.${jwt2.payloadB64}`;
-
-  const h1 = createHash(hashAlg).update(msg1).digest();
-  const h2 = createHash(hashAlg).update(msg2).digest();
-
-  const em1 = buildEM(h1, hashAlg, keyLen);
-  const em2 = buildEM(h2, hashAlg, keyLen);
-
+  const s0 = bufferToBigint(sig0);
   const s1 = bufferToBigint(sig1);
-  const s2 = bufferToBigint(sig2);
+  const s0bn = BN.fromBigInt(s0);
+  const s1bn = BN.fromBigInt(s1);
+  const m0bn = BN.fromBigInt(m0);
+  const m1bn = BN.fromBigInt(m1);
 
-  onProgress?.(`Computing s1^e (this may take up to a minute)…`);
-  const e = 65537n;
-  const s1e = s1 ** e;
+  // Try the common public exponents, smallest first (e=3 is cheap).
+  for (const e of [3n, 65537n]) {
+    try {
+      onProgress?.(`e=${e}: computing sig^e (~16 MB integers; this can take a few minutes)…`);
+      const p0 = BN.pow(s0bn, e);
+      const p1 = BN.pow(s1bn, e);
+      if (BN.cmp(p0, m0bn) < 0 || BN.cmp(p1, m1bn) < 0) continue;
+      const A = BN.sub(p0, m0bn);
+      const B = BN.sub(p1, m1bn);
 
-  onProgress?.(`Computing s2^e…`);
-  const s2e = s2 ** e;
+      onProgress?.(`e=${e}: computing GCD (the slow step — several minutes)…`);
+      let lastPct = -1;
+      const g = BN.gcd(A, B, (remaining, start) => {
+        const pct = Math.min(99, Math.floor((1 - remaining / start) * 100));
+        if (pct !== lastPct) {
+          lastPct = pct;
+          onProgress?.(`e=${e}: GCD ${pct}%…`);
+        }
+      });
+      const gInt = BN.toBigInt(g); // k·n — a few thousand bits, fits native
 
-  onProgress?.(`Computing residuals and GCD…`);
-  const r1 = s1e - em1;
-  const r2 = s2e - em2;
+      // Strip a small cofactor and validate (jwt_forgery: my_gcd in 1..99).
+      const validates = (nc: bigint) => nc > 1n && modpow(s0, e, nc) === ((m0 % nc) + nc) % nc;
+      for (let k = 1n; k <= 100n; k++) {
+        if (gInt % k !== 0n) continue;
+        let nCand = gInt / k;
+        if (nCand.toString(2).length < 1024) continue;
+        if (!validates(nCand)) continue;
+        // Reduce out any remaining tiny factor so we return the EXACT modulus
+        // (the GCD can be a small multiple of n, e.g. 2n, which also validates).
+        for (const p of [2n, 3n, 5n, 7n, 11n, 13n]) {
+          while (nCand % p === 0n && validates(nCand / p)) nCand /= p;
+        }
+        const bits = nCand.toString(2).length;
+        onProgress?.(`Recovered ${bits}-bit modulus (e=${e}). Building public key…`);
+        return { publicKeyPem: bigintToPublicKeyPem(nCand, e), modulusBits: bits };
+      }
+      onProgress?.(`e=${e}: no valid modulus from the GCD.`);
+    } catch (err) {
+      onProgress?.(`e=${e} failed: ${(err as Error).message}`);
+    }
+  }
 
-  let nCandidate = gcd(r1 < 0n ? -r1 : r1, r2 < 0n ? -r2 : r2);
-  onProgress?.(`Raw GCD computed (${nCandidate.toString(16).length / 2} bytes), removing small factors…`);
-
-  nCandidate = stripSmallFactors(nCandidate);
-
-  const bitLen = nCandidate.toString(2).length;
-  if (bitLen < 512) throw new Error(`Recovered modulus too small (${bitLen} bits) — likely an incorrect pair`);
-
-  onProgress?.(`Recovered ${bitLen}-bit modulus. Building public key…`);
-
-  const pem = bigintToPublicKeyPem(nCandidate);
-  return { publicKeyPem: pem, modulusBits: bitLen };
+  throw new Error("Could not recover a modulus for e=3 or e=65537 from this JWT pair");
 }
 
 export async function recoverPublicKeyFromJWTs(

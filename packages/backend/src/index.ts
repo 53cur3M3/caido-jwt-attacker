@@ -305,6 +305,15 @@ async function attackJwt(
       }
     };
 
+    // Collect key-recovery candidates from history BEFORE sending anything, so
+    // this run's own forged tokens don't end up in the candidate set.
+    let recoveryCandidates: ParsedJWT[] = [];
+    if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
+      try {
+        recoveryCandidates = await collectHistoryJWTs(sdk, request.getHost(), 50);
+      } catch { /* non-fatal */ }
+    }
+
     // ── First wave (baseline first, then all attack variants) ────────────────
     const firstWave = [baseline, ...attacks];
     sdk.api.send("jwt-attack-started", { sessionId, requestId, total: firstWave.length });
@@ -318,7 +327,7 @@ async function attackJwt(
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
       try {
         const host = request.getHost();
-        const historyJWTs = await collectHistoryJWTs(sdk, host, 25);
+        const historyJWTs = recoveryCandidates;
         if (historyJWTs.length >= 2) {
           sdk.api.send("jwt-key-recovery-progress", {
             sessionId,
@@ -542,7 +551,7 @@ async function collectHistoryJWTs(
   limit: number
 ): Promise<ParsedJWT[]> {
   const results: ParsedJWT[] = [];
-  const seen = new Set<string>();
+  const seenSig = new Set<string>();
   try {
     const page = await sdk.requests
       .query()
@@ -552,23 +561,30 @@ async function collectHistoryJWTs(
       .execute();
 
     // RequestsConnection — cast to access items array
-    const conn = page as unknown as { items?: Array<{ request?: { toSpec(): unknown } }> };
+    const conn = page as unknown as {
+      items?: Array<{ request?: { toSpec(): unknown; getSource?(): string } }>;
+    };
     for (const item of conn.items ?? []) {
       if (!item.request) continue;
+      // Only use genuine captured traffic. Skip Replay/Automate/Workflow-sourced
+      // requests (these include the analyst's replays and our own forged tokens).
+      const src = (item.request.getSource?.() ?? "").toLowerCase();
+      if (src.includes("replay") || src.includes("automate") || src.includes("workflow")) continue;
+
       const spec = item.request.toSpec() as unknown as IRequestSpec;
       const locs = findJWTsInSpec(spec);
       for (const loc of locs) {
-        // De-duplicate: recovery needs JWTs with *distinct* signatures sharing
-        // the same key. The same token reused across requests is useless.
-        if (seen.has(loc.jwt)) continue;
-        seen.add(loc.jwt);
         try {
           const parsed = parseJWT(loc.jwt);
           const fam = getAlgorithmFamily(parsed.header.alg as string);
-          if ((fam === "RS" || fam === "PS") && parsed.signatureB64) {
-            results.push(parsed);
-            if (results.length >= 10) return results;
-          }
+          if (!(fam === "RS" || fam === "PS") || !parsed.signatureB64) continue;
+          // Skip our own spoofing tokens, and de-duplicate by signature —
+          // recovery needs JWTs with *distinct* signatures under the same key.
+          if (parsed.header.kid === SPOOF_KID) continue;
+          if (seenSig.has(parsed.signatureB64)) continue;
+          seenSig.add(parsed.signatureB64);
+          results.push(parsed);
+          if (results.length >= 10) return results;
         } catch { /* ignore */ }
       }
     }

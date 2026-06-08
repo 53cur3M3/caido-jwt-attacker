@@ -142,9 +142,12 @@
         <span class="text-gray-300">
           RSA public-key recovery from HTTP history
           <span class="block text-xs text-gray-500 mt-0.5">
-            Attempts to recover the signing key from 2+ same-host RS/PS JWTs, then runs
-            algorithm-confusion with it. Off by default — the math (sig<sup>65537</sup>) is
-            extremely slow in Caido's JS runtime and may take many minutes or not finish.
+            Recovers the public key from 2+ same-host RS/PS JWTs (silentsignal rsa_sign2n method),
+            then runs algorithm-confusion with it. Off by default. The GCD of two ~16&nbsp;MB integers
+            (sig<sup>65537</sup>) is O(n²) in a JS runtime with no GMP, so for 2048-bit/e=65537 keys
+            this can take a <strong>very long time</strong> (tens of minutes to hours) and blocks the
+            backend while it runs. For fast results, run <code>rsa_sign2n</code> externally and paste
+            the recovered key into the Public Key field above. e=3 keys recover quickly.
           </span>
         </span>
       </label>
