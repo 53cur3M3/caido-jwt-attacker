@@ -284,14 +284,11 @@ export async function recoverPublicKeyFromJWTs(
 
   const hasWasm = typeof (globalThis as { WebAssembly?: unknown }).WebAssembly !== "undefined";
   if (!hasWasm) {
-    // No WebAssembly → fall back to the (slow, budgeted) pure-JS path on one pair.
-    onProgress?.("WebAssembly unavailable — using the slower pure-JS recovery on one pair.");
-    try {
-      return [await recoverRSAPublicKey(groups[0][0], groups[0][1], onProgress)];
-    } catch (err) {
-      onProgress?.(`Recovery failed: ${(err as Error).message}`);
-      return [];
-    }
+    // Caido's backend runtime has no WebAssembly, so gmp-wasm can't run here and
+    // the pure-JS path is impractical. Recovery is performed in the FRONTEND
+    // instead; signal that to the caller (which hands off to the frontend).
+    onProgress?.("Backend has no WebAssembly — recovery will run in the frontend (gmp-wasm).");
+    return [];
   }
 
   onProgress?.("Initialising GMP (gmp-wasm)…");

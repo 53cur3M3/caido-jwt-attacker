@@ -816,43 +816,67 @@ async function collectHistoryJWTs(
 ): Promise<ParsedJWT[]> {
   const results: ParsedJWT[] = [];
   const seenSig = new Set<string>();
-  try {
-    const page = await sdk.requests
-      .query()
-      .filter(`req.host.eq:"${host}"`)
-      .descending("req", "id")
-      .first(limit)
-      .execute();
+  const log = (m: string) => sdk.console.log(`[recovery] ${m}`);
 
-    // RequestsConnection — cast to access items array
-    const conn = page as unknown as {
-      items?: Array<{ request?: { toSpec(): unknown; getSource?(): string } }>;
-    };
-    for (const item of conn.items ?? []) {
-      if (!item.request) continue;
-      // Only use genuine captured traffic. Skip Replay/Automate/Workflow-sourced
-      // requests (these include the analyst's replays and our own forged tokens).
-      const src = (item.request.getSource?.() ?? "").toLowerCase();
-      if (src.includes("replay") || src.includes("automate") || src.includes("workflow")) continue;
+  // Run a query and return its items, tolerating either filter syntax / errors.
+  const runQuery = async (filter: string | null): Promise<unknown[]> => {
+    try {
+      let q = sdk.requests.query().descending("req", "id").first(limit);
+      if (filter) q = q.filter(filter);
+      const page = await q.execute();
+      const conn = page as unknown as { items?: unknown[] };
+      return conn.items ?? [];
+    } catch (e) {
+      log(`query(${filter ?? "no-filter"}) threw: ${(e as Error).message}`);
+      return [];
+    }
+  };
 
+  log(`scanning history for host="${host}" (limit ${limit})`);
+  // Prefer a host-filtered query; if that yields nothing, fall back to scanning
+  // recent history unfiltered and matching the host ourselves (filter syntax or
+  // host formatting can otherwise silently exclude everything).
+  let items = await runQuery(`req.host.eq:"${host}"`);
+  log(`host-filtered query returned ${items.length} item(s)`);
+  if (items.length === 0) {
+    items = await runQuery(null);
+    log(`unfiltered query returned ${items.length} item(s)`);
+  }
+
+  let scanned = 0;
+  let jwtsSeen = 0;
+  for (const raw of items) {
+    const item = raw as { request?: { toSpec(): unknown; getHost?(): string } };
+    if (!item.request) continue;
+    try {
+      // When we fell back to an unfiltered scan, match the host ourselves.
+      const itemHost = item.request.getHost?.();
+      if (itemHost && host && itemHost !== host) continue;
+
+      scanned++;
       const spec = item.request.toSpec() as unknown as IRequestSpec;
       const locs = findJWTsInSpec(spec);
       for (const loc of locs) {
         try {
           const parsed = parseJWT(loc.jwt);
+          jwtsSeen++;
           const fam = getAlgorithmFamily(parsed.header.alg as string);
-          if (!(fam === "RS" || fam === "PS") || !parsed.signatureB64) continue;
-          // Skip our own spoofing tokens, and de-duplicate by signature —
-          // recovery needs JWTs with *distinct* signatures under the same key.
+          if (!(fam === "RS" || fam === "PS")) continue;
+          if (!parsed.signatureB64) continue;
+          // Skip our own spoofing tokens; de-duplicate by signature (recovery
+          // needs JWTs with *distinct* signatures under the same key).
           if (parsed.header.kid === SPOOF_KID) continue;
           if (seenSig.has(parsed.signatureB64)) continue;
           seenSig.add(parsed.signatureB64);
           results.push(parsed);
-          if (results.length >= 10) return results;
-        } catch { /* ignore */ }
+          if (results.length >= 10) { log(`reached cap of 10 distinct RS/PS JWTs`); return results; }
+        } catch { /* not a JWT */ }
       }
+    } catch (e) {
+      log(`item scan threw: ${(e as Error).message}`);
     }
-  } catch { /* ignore */ }
+  }
+  log(`scanned ${scanned} same-host request(s); found ${jwtsSeen} JWT(s); ${results.length} distinct RS/PS candidate(s)`);
   return results;
 }
 
