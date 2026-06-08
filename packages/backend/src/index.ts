@@ -4,6 +4,7 @@ import { RequestSpec } from "caido:utils";
 import { parseJWT, getAlgorithmFamily, verifyRS256WithJWK } from "./crypto/jwt.js";
 import { generateRSAKeyPair, buildJWKSDocument, type RSAKeyPair } from "./crypto/rsa.js";
 import { recoverPublicKeyFromJWTs } from "./crypto/keyRecovery.js";
+import { gmpSelfTest } from "./crypto/gmpRecovery.js";
 import { buildNoneAttacks } from "./attacks/none.js";
 import { buildNullSigAttacks } from "./attacks/nullSig.js";
 import { buildAlgConfusionAttacks, buildAlgConfusionForKeys } from "./attacks/algConfusion.js";
@@ -468,21 +469,20 @@ async function attackJwt(
     await runBypassFindings(attacks);
 
     // ── Second wave: RSA public-key recovery from same-host HTTP history ──────
-    // Requires 2+ distinct RS/PS JWTs from the same host. The recovery math
-    // (sig^65537 over the integers) is heavy and pure-JS BigInt lacks GMP-grade
-    // performance, so it is opt-in (cfg.enableKeyRecovery) and runs only after
-    // the main attacks have already been sent.
+    // Requires 2+ distinct RS/PS JWTs from the same host (rsa_sign2n /
+    // jwt_forgery.py math). The heavy arithmetic runs in GMP via gmp-wasm; it is
+    // opt-in (cfg.enableKeyRecovery) and runs after the main attacks are sent.
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
       const host = request.getHost();
       const historyJWTs = recoveryCandidates;
       const fullTok = (j: ParsedJWT) => `${j.headerB64}.${j.payloadB64}.${j.signatureB64}`;
-      // External fallback: rsa_sign2n (GMP-backed) recovers in seconds where the
-      // in-browser O(n²) GCD can't. Shown whenever in-runtime recovery doesn't win.
+      // Fallback hint (e.g. if this runtime lacks WebAssembly, or no pair works):
+      // rsa_sign2n recovers from the same JWTs externally.
       const emitExternalHint = () => {
         if (historyJWTs.length >= 2) {
           sdk.api.send("jwt-key-recovery-progress", {
             sessionId,
-            message: `For fast recovery run rsa_sign2n externally:  python3 jwt_forgery.py "${fullTok(historyJWTs[0])}" "${fullTok(historyJWTs[1])}"  — then paste the recovered public key into Configuration → Public Key and re-run with Algorithm Confusion.`,
+            message: `You can also recover externally:  python3 jwt_forgery.py "${fullTok(historyJWTs[0])}" "${fullTok(historyJWTs[1])}"  — then paste the recovered public key into Configuration → Public Key and re-run with Algorithm Confusion.`,
           });
         }
       };
@@ -500,14 +500,21 @@ async function attackJwt(
         } else {
           sdk.api.send("jwt-key-recovery-progress", {
             sessionId,
-            message: "Attempting public-key recovery (e=3 is fast; e=65537 runs under a ~4-minute budget and aborts if it can't finish — it's O(n²) without GMP)…",
+            message: `Attempting GMP-backed public-key recovery from ${historyJWTs.length} JWT(s), pair by pair (e=3 is instant; e=65537 ≈ 1–2 min per pair). Stops at the first recovered key…`,
           });
+          // Generous overall budget; each pair is bounded and we stop on success.
+          const recoveryDeadline = Date.now() + 600000; // 10 minutes
           const keyResults = await recoverPublicKeyFromJWTs(
             historyJWTs,
-            (msg) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: msg })
+            (msg) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: msg }),
+            () => Date.now() > recoveryDeadline
           );
           const recoveredKeys = keyResults.map((r) => r.publicKeyPem);
           if (recoveredKeys.length) {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: "✓ Public key recovered — launching algorithm-confusion attacks with it.",
+            });
             sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: recoveredKeys });
             const extra = buildAlgConfusionForKeys(parsed, recoveredKeys, "recovered from HTTP history");
             if (extra.length) {
@@ -521,7 +528,7 @@ async function attackJwt(
           } else {
             sdk.api.send("jwt-key-recovery-progress", {
               sessionId,
-              message: "In-browser recovery did not finish (e=65537 is too slow here).",
+              message: "No public key recovered from the available JWT pairs.",
             });
             emitExternalHint();
           }
@@ -855,6 +862,7 @@ export type API = DefineAPI<{
   attackJwt: typeof attackJwt;
   getJWTsInRequest: typeof getJWTsInRequest;
   generateSpoofKeyPair: typeof generateSpoofKeyPair;
+  gmpSelfTest: typeof gmpSelfTest;
 }>;
 
 export function init(sdk: SDK<API, BackendEvents>): void {
@@ -862,5 +870,6 @@ export function init(sdk: SDK<API, BackendEvents>): void {
   sdk.api.register("attackJwt", attackJwt);
   sdk.api.register("getJWTsInRequest", getJWTsInRequest);
   sdk.api.register("generateSpoofKeyPair", generateSpoofKeyPair);
+  sdk.api.register("gmpSelfTest", gmpSelfTest);
   sdk.console.log("[JWT Attacker] backend init() complete");
 }

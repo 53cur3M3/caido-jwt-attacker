@@ -19,7 +19,11 @@ import { createHash } from "crypto";
 import { b64urlDecode } from "./jwt.js";
 import { encodeSequence, encodeInteger, encodeBitString } from "./rsa.js";
 import * as BN from "./bignum.js";
+import { loadGmp } from "./gmpRecovery.js";
 import type { ParsedJWT } from "../types.js";
+
+// Type-only — erased at build; keeps gmp-wasm out of the module load graph.
+type GmpLib = Awaited<ReturnType<typeof import("gmp-wasm").init>>;
 
 // DER DigestInfo prefixes for PKCS#1 v1.5 encoding (rfc 3447 §9.2)
 const DIGEST_INFO: Record<string, Buffer> = {
@@ -183,40 +187,135 @@ export async function recoverRSAPublicKey(
   throw new Error("Could not recover a modulus for e=3 or e=65537 from this JWT pair");
 }
 
+// ── GMP (gmp-wasm) backed recovery ──────────────────────────────────────────
+// GMP has fast (FFT) multiplication and a sub-quadratic GCD, so the heavy
+// operations (sig^e over the integers, GCD of two ~16 MB results) complete in
+// well under a couple of minutes where pure-JS BigInt is impractical.
+
+/** gcd(sig0^e - m0, sig1^e - m1) computed entirely inside GMP; result (a small
+ *  multiple of n) is returned as a native BigInt. */
+function gmpGcdOfPowerDiffs(gmp: GmpLib, s0: bigint, s1: bigint, m0: bigint, m1: bigint, e: number): bigint {
+  const ctx = gmp.getContext();
+  try {
+    const S0 = ctx.Integer(s0.toString(16), 16);
+    const S1 = ctx.Integer(s1.toString(16), 16);
+    const M0 = ctx.Integer(m0.toString(16), 16);
+    const M1 = ctx.Integer(m1.toString(16), 16);
+    const A = S0.pow(e).sub(M0);   // = k0·n
+    const B = S1.pow(e).sub(M1);   // = k1·n
+    const hex = A.gcd(B).toString(16);
+    return hex === "0" ? 0n : BigInt("0x" + hex);
+  } finally {
+    ctx.destroy();
+  }
+}
+
+/** Recover the RSA public key from one JWT pair using GMP (jwt_forgery.py math).
+ *  Tries e=3 (cheap) then e=65537. Returns the validated, minimal modulus. */
+async function recoverRSAPublicKeyGmp(
+  jwt0: ParsedJWT,
+  jwt1: ParsedJWT,
+  gmp: GmpLib,
+  onProgress?: (msg: string) => void
+): Promise<KeyRecoveryResult> {
+  const alg = jwt0.header.alg as string;
+  if (!ALG_TO_HASH[alg]) throw new Error(`Unsupported algorithm: ${alg}`);
+  const hashAlg = ALG_TO_HASH[alg];
+
+  const sig0 = b64urlDecode(jwt0.signatureB64);
+  const sig1 = b64urlDecode(jwt1.signatureB64);
+  const keyLen = sig0.length;
+
+  const h0 = createHash(hashAlg).update(`${jwt0.headerB64}.${jwt0.payloadB64}`).digest();
+  const h1 = createHash(hashAlg).update(`${jwt1.headerB64}.${jwt1.payloadB64}`).digest();
+  const m0 = buildEM(h0, hashAlg, keyLen);
+  const m1 = buildEM(h1, hashAlg, keyLen);
+  const s0 = bufferToBigint(sig0);
+  const s1 = bufferToBigint(sig1);
+
+  for (const e of [3, 65537]) {
+    try {
+      onProgress?.(`e=${e}: computing sig^e − EM and their GCD via GMP…`);
+      const gInt = gmpGcdOfPowerDiffs(gmp, s0, s1, m0, m1, e);
+      if (gInt === 0n) { onProgress?.(`e=${e}: GCD was 0.`); continue; }
+
+      const eb = BigInt(e);
+      const validates = (nc: bigint) => nc > 1n && modpow(s0, eb, nc) === ((m0 % nc) + nc) % nc;
+      for (let k = 1n; k <= 100n; k++) {
+        if (gInt % k !== 0n) continue;
+        let nCand = gInt / k;
+        if (nCand.toString(2).length < 1024) continue;
+        if (!validates(nCand)) continue;
+        // Reduce any residual tiny factor to return the EXACT modulus.
+        for (const p of [2n, 3n, 5n, 7n, 11n, 13n]) {
+          while (nCand % p === 0n && validates(nCand / p)) nCand /= p;
+        }
+        const bits = nCand.toString(2).length;
+        onProgress?.(`Recovered ${bits}-bit modulus (e=${e}).`);
+        return { publicKeyPem: bigintToPublicKeyPem(nCand, eb), modulusBits: bits };
+      }
+      onProgress?.(`e=${e}: GCD gave no valid modulus.`);
+    } catch (err) {
+      onProgress?.(`e=${e} failed: ${(err as Error).message}`);
+    }
+  }
+  throw new Error("No modulus recovered (e=3 or e=65537) from this JWT pair");
+}
+
 export async function recoverPublicKeyFromJWTs(
   jwts: ParsedJWT[],
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  abort?: () => boolean
 ): Promise<KeyRecoveryResult[]> {
-  // Filter to only RS-family tokens with the same algorithm
+  // Filter to only RS-family tokens with a supported algorithm.
   const rsJwts = jwts.filter((j) => j.header.alg && ALG_TO_HASH[j.header.alg]);
   if (rsJwts.length < 2) {
     throw new Error("Need at least 2 RS-family JWTs with the same algorithm");
   }
 
-  // Group by algorithm
+  // Group by algorithm (a key is tied to one hash alg); attempt larger groups first.
   const byAlg: Record<string, ParsedJWT[]> = {};
   for (const jwt of rsJwts) {
     const alg = jwt.header.alg as string;
     (byAlg[alg] ??= []).push(jwt);
   }
-
-  const results: KeyRecoveryResult[] = [];
-
-  // Only the largest single-algorithm group is attempted, and only ONE pair from
-  // it. Each recoverRSAPublicKey call performs sig^65537 over the integers plus a
-  // GCD on ~16 MB numbers, which is very expensive in pure-JS BigInt — trying
-  // multiple pairs would multiply an already large cost.
   const groups = Object.values(byAlg).filter((g) => g.length >= 2).sort((a, b) => b.length - a.length);
-  if (groups.length) {
-    const group = groups[0];
-    const alg = group[0].header.alg as string;
-    onProgress?.(`Attempting key recovery for ${alg} using 2 of ${group.length} JWTs…`);
+  if (!groups.length) throw new Error("Need at least 2 JWTs sharing the same algorithm");
+
+  const hasWasm = typeof (globalThis as { WebAssembly?: unknown }).WebAssembly !== "undefined";
+  if (!hasWasm) {
+    // No WebAssembly → fall back to the (slow, budgeted) pure-JS path on one pair.
+    onProgress?.("WebAssembly unavailable — using the slower pure-JS recovery on one pair.");
     try {
-      results.push(await recoverRSAPublicKey(group[0], group[1], onProgress));
+      return [await recoverRSAPublicKey(groups[0][0], groups[0][1], onProgress)];
     } catch (err) {
       onProgress?.(`Recovery failed: ${(err as Error).message}`);
+      return [];
     }
   }
 
-  return results;
+  onProgress?.("Initialising GMP (gmp-wasm)…");
+  const gmp = await loadGmp();
+
+  // Try each pair in turn; stop as soon as a key is recovered.
+  for (const group of groups) {
+    const alg = group[0].header.alg as string;
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        if (abort?.()) {
+          onProgress?.("Key recovery stopped (time budget exceeded).");
+          return [];
+        }
+        onProgress?.(`Recovering ${alg} key from JWT pair ${i + 1}+${j + 1} of ${group.length}…`);
+        try {
+          const result = await recoverRSAPublicKeyGmp(group[i], group[j], gmp, onProgress);
+          return [result]; // success — stop comparing further pairs
+        } catch (err) {
+          onProgress?.(`Pair ${i + 1}+${j + 1} did not yield a key: ${(err as Error).message}`);
+        }
+      }
+    }
+  }
+
+  return [];
 }

@@ -151,6 +151,20 @@
           </span>
         </span>
       </label>
+
+      <!-- gmp-wasm viability self-test -->
+      <div class="mt-4">
+        <button
+          @click="runGmpTest"
+          :disabled="gmpTesting"
+          class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-100 text-xs rounded transition-colors disabled:opacity-50"
+          title="Check whether gmp-wasm (fast GMP-backed recovery) can run in this backend, and benchmark a full 2048-bit recovery"
+        >{{ gmpTesting ? "Testing…" : "Test gmp-wasm (RSA recovery engine)" }}</button>
+        <p
+          v-if="gmpResult"
+          :class="['text-xs mt-2 font-mono break-words', gmpOk ? 'text-green-400' : 'text-red-400']"
+        >{{ gmpOk ? "✓ " : "✗ " }}{{ gmpResult }}</p>
+      </div>
     </section>
 
     <div class="pt-2 flex gap-3">
@@ -170,6 +184,7 @@ import { ref, reactive, watch } from "vue";
 import { useConfigStore } from "../stores/config.js";
 import { ATTACK_LABELS, DEFAULT_CONFIG } from "../types.js";
 import type { PluginConfig } from "../types.js";
+import { gmpSelfTest } from "../recovery/gmp.js";
 
 const store = useConfigStore();
 // Deep-clone so the local form never shares nested objects (e.g. enabledAttacks)
@@ -180,6 +195,25 @@ const clone = (c: PluginConfig): PluginConfig => JSON.parse(JSON.stringify(c));
 const cfg = reactive(clone(store.config));
 const saved = ref(false);
 const copiedJwks = ref(false);
+const gmpTesting = ref(false);
+const gmpResult = ref("");
+const gmpOk = ref(false);
+
+async function runGmpTest() {
+  gmpTesting.value = true;
+  gmpResult.value = "";
+  try {
+    // Run gmp-wasm in the FRONTEND (the backend runtime has no WebAssembly).
+    const r = await gmpSelfTest();
+    gmpOk.value = !!r?.ok;
+    gmpResult.value = r?.message ?? "No response.";
+  } catch (e) {
+    gmpOk.value = false;
+    gmpResult.value = `Self-test threw: ${(e as Error).message}`;
+  } finally {
+    gmpTesting.value = false;
+  }
+}
 
 // Sync store → form only on genuine external store changes (load / regenerate /
 // save), deep-cloning so refs stay independent.
