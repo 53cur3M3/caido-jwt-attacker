@@ -2134,6 +2134,17 @@ async function attackJwt(sdk, requestId, config) {
       modifiedJWT: originalJWT,
       timestamp: Date.now()
     };
+    const origSig = parsed.signatureB64;
+    const corruptSig = origSig.length ? origSig.slice(0, -1) + (origSig.slice(-1) === "A" ? "B" : "A") : "aW52YWxpZHNpZ25hdHVyZQ";
+    const invalidSig = {
+      id: nanoid(),
+      technique: "invalidSig",
+      techniqueName: "Invalid signature (baseline failure)",
+      description: "The original token with its signature corrupted \u2014 a known-bad request. If this matches the baseline response, the server is not validating the JWT signature.",
+      modifiedJWT: `${parsed.headerB64}.${parsed.payloadB64}.${corruptSig}`,
+      timestamp: Date.now()
+    };
+    const sentById = /* @__PURE__ */ new Map();
     const sendAttacks = async (list) => {
       for (const attack of list) {
         if (attack.infoOnly) {
@@ -2146,6 +2157,7 @@ async function attackJwt(sdk, requestId, config) {
           const sent = await sdk.requests.send(attackSpec);
           attack.durationMs = Date.now() - start;
           attack.requestId = sent.request?.getId();
+          sentById.set(attack.id, { request: sent.request, response: sent.response });
           if (sent.response) {
             attack.responseStatus = sent.response.getCode();
             const body = sent.response.getBody();
@@ -2168,9 +2180,40 @@ async function attackJwt(sdk, requestId, config) {
       } catch {
       }
     }
-    const firstWave = [baseline, ...attacks];
+    const firstWave = [baseline, invalidSig, ...attacks];
     sdk.api.send("jwt-attack-started", { sessionId, requestId, total: firstWave.length });
     await sendAttacks(firstWave);
+    if (baseline.responseStatus !== void 0 && invalidSig.responseStatus !== void 0) {
+      const sameStatus = baseline.responseStatus === invalidSig.responseStatus;
+      const bLen = baseline.responseLength ?? 0;
+      const iLen = invalidSig.responseLength ?? 0;
+      const lenClose = Math.abs(bLen - iLen) <= Math.max(32, Math.floor(bLen * 0.05));
+      if (sameStatus && lenClose) {
+        invalidSig.signatureNotValidated = true;
+        invalidSig.description += ` \u26A0 Response matches the baseline (HTTP ${invalidSig.responseStatus}, ~${iLen} bytes vs baseline ~${bLen} bytes) \u2014 the endpoint may NOT be validating the JWT signature.`;
+        sdk.api.send("jwt-attack-result", { sessionId, result: invalidSig });
+        try {
+          const sent = sentById.get(invalidSig.id);
+          if (sent?.request) {
+            await sdk.findings.create({
+              title: "Endpoint may not validate JWT signature",
+              reporter: "JWT Attacker",
+              dedupeKey: `jwt-attacker:no-sig-validation:${sent.request.getHost()}${sent.request.getPath()}`,
+              request: sent.request,
+              description: `**The endpoint does not appear to validate the JWT signature.**
+
+A request carrying a JWT whose signature was deliberately corrupted returned the same response as the unmodified token (HTTP ${invalidSig.responseStatus}, ~${iLen} bytes vs baseline ~${bLen} bytes). The endpoint likely does not verify the JWT signature, so forged or tampered tokens (e.g. with elevated claims) would be accepted.`
+            });
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: 'Finding created: "Endpoint may not validate JWT signature".'
+            });
+          }
+        } catch (e) {
+          errors.push(`[finding] ${e.message}`);
+        }
+      }
+    }
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
       const host = request.getHost();
       const historyJWTs = recoveryCandidates;
@@ -2208,7 +2251,7 @@ async function attackJwt(sdk, requestId, config) {
             const extra = buildAlgConfusionForKeys(parsed, recoveredKeys, "recovered from HTTP history");
             if (extra.length) {
               attacks.push(...extra);
-              sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 1 });
+              sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 2 });
               await sendAttacks(extra);
             }
           } else {

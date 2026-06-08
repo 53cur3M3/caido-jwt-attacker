@@ -40,7 +40,12 @@ export const useAttackStore = defineStore("attacks", () => {
 
   function addResult(sessionId: string, result: AttackSession["results"][number]) {
     const s = sessions.value.find((x) => x.sessionId === sessionId);
-    if (s) s.results.push(result);
+    if (!s) return;
+    // Update in place if this result was already emitted (e.g. the invalid-sig
+    // probe is re-emitted after the signature-validation comparison); otherwise add.
+    const idx = s.results.findIndex((r) => r.id === result.id);
+    if (idx >= 0) s.results[idx] = result;
+    else s.results.push(result);
   }
 
   function completeSession(sessionId: string, errors: string[]) {

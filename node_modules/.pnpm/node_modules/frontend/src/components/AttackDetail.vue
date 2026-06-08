@@ -38,6 +38,21 @@
         </div>
       </section>
 
+      <!-- Invalid-signature probe outcome -->
+      <section v-if="result.technique === 'invalidSig'" class="px-4 py-3 border-b border-gray-700">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Signature validation check</p>
+        <div v-if="result.signatureNotValidated" class="bg-red-950 border border-red-800 rounded p-2 text-xs text-red-200">
+          ⚠ The corrupted-signature token was <strong>accepted</strong>: this response matches the baseline
+          (status {{ result.responseStatus }}, ~{{ result.responseLength }} bytes). The endpoint
+          <strong>does NOT appear to enforce JWT signature validation</strong> — forged/tampered tokens would be
+          accepted. A finding "Endpoint may not validate JWT signature" has been created.
+        </div>
+        <div v-else class="bg-green-950 border border-green-800 rounded p-2 text-xs text-green-200">
+          ✓ The corrupted-signature response differs from the baseline (status {{ result.responseStatus }}) —
+          the endpoint appears to enforce JWT signature validation.
+        </div>
+      </section>
+
       <!-- Modified JWT (hidden for info-only rows such as JWKS verification) -->
       <section v-if="result.modifiedJWT" class="px-4 py-3 border-b border-gray-700">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Modified JWT</p>

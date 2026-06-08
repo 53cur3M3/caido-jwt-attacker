@@ -293,7 +293,26 @@ async function attackJwt(
       timestamp: Date.now(),
     };
 
+    // Invalid signature: the original token with a corrupted signature, sent right
+    // after the baseline as a known-bad reference. If the server still responds the
+    // same as the baseline, it is not verifying the signature.
+    const origSig = parsed.signatureB64;
+    const corruptSig = origSig.length
+      ? origSig.slice(0, -1) + (origSig.slice(-1) === "A" ? "B" : "A")
+      : "aW52YWxpZHNpZ25hdHVyZQ";
+    const invalidSig: AttackResult = {
+      id: nanoid(),
+      technique: "invalidSig",
+      techniqueName: "Invalid signature (baseline failure)",
+      description: "The original token with its signature corrupted — a known-bad request. " +
+        "If this matches the baseline response, the server is not validating the JWT signature.",
+      modifiedJWT: `${parsed.headerB64}.${parsed.payloadB64}.${corruptSig}`,
+      timestamp: Date.now(),
+    };
+
     // ── Send helper (reused for the first wave and the recovery second wave) ──
+    // Captures the sent request/response per attack id (used for findings).
+    const sentById = new Map<string, { request?: unknown; response?: unknown }>();
     const sendAttacks = async (list: AttackResult[]) => {
       for (const attack of list) {
         // Informational results (e.g. weak-secret "not found") are shown but not sent.
@@ -307,6 +326,7 @@ async function attackJwt(
           const sent = await sdk.requests.send(attackSpec as unknown as Parameters<typeof sdk.requests.send>[0]);
           attack.durationMs = Date.now() - start;
           attack.requestId = sent.request?.getId();
+          sentById.set(attack.id, { request: sent.request, response: sent.response });
 
           if (sent.response) {
             attack.responseStatus = sent.response.getCode();
@@ -333,10 +353,55 @@ async function attackJwt(
       } catch { /* non-fatal */ }
     }
 
-    // ── First wave (baseline first, then all attack variants) ────────────────
-    const firstWave = [baseline, ...attacks];
+    // ── First wave (baseline, then invalid-signature probe, then attacks) ─────
+    const firstWave = [baseline, invalidSig, ...attacks];
     sdk.api.send("jwt-attack-started", { sessionId, requestId, total: firstWave.length });
     await sendAttacks(firstWave);
+
+    // ── Signature-validation check: invalid-sig response vs baseline ──────────
+    if (baseline.responseStatus !== undefined && invalidSig.responseStatus !== undefined) {
+      const sameStatus = baseline.responseStatus === invalidSig.responseStatus;
+      const bLen = baseline.responseLength ?? 0;
+      const iLen = invalidSig.responseLength ?? 0;
+      const lenClose = Math.abs(bLen - iLen) <= Math.max(32, Math.floor(bLen * 0.05));
+      if (sameStatus && lenClose) {
+        invalidSig.signatureNotValidated = true;
+        invalidSig.description +=
+          ` ⚠ Response matches the baseline (HTTP ${invalidSig.responseStatus}, ` +
+          `~${iLen} bytes vs baseline ~${bLen} bytes) — the endpoint may NOT be validating the JWT signature.`;
+        // Re-emit so the UI shows the warning.
+        sdk.api.send("jwt-attack-result", { sessionId, result: invalidSig });
+
+        // Raise a finding. The raw request/response are shown in Caido's
+        // Request/Response pane (via the attached request), so the description is
+        // just the markdown summary.
+        try {
+          const sent = sentById.get(invalidSig.id) as
+            | { request?: { getHost(): string; getPath(): string } }
+            | undefined;
+          if (sent?.request) {
+            await sdk.findings.create({
+              title: "Endpoint may not validate JWT signature",
+              reporter: "JWT Attacker",
+              dedupeKey: `jwt-attacker:no-sig-validation:${sent.request.getHost()}${sent.request.getPath()}`,
+              request: sent.request as unknown as Parameters<typeof sdk.findings.create>[0]["request"],
+              description:
+                "**The endpoint does not appear to validate the JWT signature.**\n\n" +
+                "A request carrying a JWT whose signature was deliberately corrupted returned the same " +
+                `response as the unmodified token (HTTP ${invalidSig.responseStatus}, ~${iLen} bytes vs ` +
+                `baseline ~${bLen} bytes). The endpoint likely does not verify the JWT signature, so forged ` +
+                "or tampered tokens (e.g. with elevated claims) would be accepted.",
+            });
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: 'Finding created: "Endpoint may not validate JWT signature".',
+            });
+          }
+        } catch (e) {
+          errors.push(`[finding] ${(e as Error).message}`);
+        }
+      }
+    }
 
     // ── Second wave: RSA public-key recovery from same-host HTTP history ──────
     // Requires 2+ distinct RS/PS JWTs from the same host. The recovery math
@@ -383,8 +448,8 @@ async function attackJwt(
             const extra = buildAlgConfusionForKeys(parsed, recoveredKeys, "recovered from HTTP history");
             if (extra.length) {
               attacks.push(...extra);
-              // +1 accounts for the baseline request already sent.
-              sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 1 });
+              // +2 accounts for the baseline + invalid-signature probes already sent.
+              sdk.api.send("jwt-attack-started", { sessionId, requestId, total: attacks.length + 2 });
               await sendAttacks(extra);
             }
           } else {

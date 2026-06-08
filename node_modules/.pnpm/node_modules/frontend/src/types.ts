@@ -27,6 +27,9 @@ export interface AttackResult {
   // Informational results (e.g. weak-secret "not found") that should be shown
   // but NOT sent as an HTTP request.
   infoOnly?: boolean;
+  // Invalid-signature probe: set when its response matched the baseline, i.e. the
+  // server appears to accept a token with a bad signature.
+  signatureNotValidated?: boolean;
   // Weak-secret crack: how many unique secrets were tested.
   secretsTested?: number;
 }
@@ -162,6 +165,7 @@ export function statusColor(status?: number): string {
 export function techniqueColor(technique: string): string {
   const palette: Record<string, string> = {
     baseline: "bg-gray-600 text-gray-100",
+    invalidSig: "bg-gray-500 text-gray-100",
     none: "bg-red-900 text-red-200",
     nullSig: "bg-red-900 text-red-200",
     algConfusion: "bg-orange-900 text-orange-200",

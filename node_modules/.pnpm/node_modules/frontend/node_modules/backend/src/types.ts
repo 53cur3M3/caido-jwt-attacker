@@ -75,6 +75,9 @@ export interface AttackResult {
   // Informational results (e.g. weak-secret "not found") that should be shown
   // but NOT sent as an HTTP request.
   infoOnly?: boolean;
+  // Invalid-signature probe: set when its response matched the baseline, i.e. the
+  // server appears to accept a token with a bad signature.
+  signatureNotValidated?: boolean;
   // Weak-secret crack: how many unique secrets were tested.
   secretsTested?: number;
 }
