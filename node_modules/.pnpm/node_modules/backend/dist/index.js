@@ -1763,7 +1763,7 @@ async function attackJwt(sdk, requestId, config) {
         recoveryCandidates = await collectHistoryJWTs(
           sdk,
           request.getHost(),
-          100,
+          1e3,
           (m) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `[scan] ${m}` })
         );
       } catch {
@@ -2153,26 +2153,53 @@ async function collectHistoryJWTs(sdk, host, limit, onLog) {
     sdk.console.log(`[recovery] ${m}`);
     onLog?.(m);
   };
-  const runQuery = async (filter) => {
+  const pageSize = 500;
+  const runHostFiltered = async () => {
     try {
-      let q = sdk.requests.query().descending("req", "id").first(limit);
-      if (filter) q = q.filter(filter);
-      const page = await q.execute();
-      const conn = page;
-      return conn.items ?? [];
+      const page = await sdk.requests.query().filter(`req.host.eq:"${host}"`).descending("req", "id").first(limit).execute();
+      return page.items ?? [];
     } catch (e) {
-      log(`query(${filter ?? "no-filter"}) threw: ${e.message}`);
+      log(`host-filtered query threw: ${e.message}`);
       return [];
     }
   };
-  log(`scanning history for host="${host}" (limit ${limit})`);
-  let items = await runQuery(`req.host.eq:"${host}"`);
+  const runPaginatedHostMatch = async () => {
+    const matched = [];
+    const SCAN_CAP = 1e4;
+    let scannedGlobal = 0;
+    let after = null;
+    while (matched.length < limit && scannedGlobal < SCAN_CAP) {
+      try {
+        let q = sdk.requests.query().descending("req", "id").first(pageSize);
+        if (after) q = q.after(after);
+        const page = await q.execute();
+        const items2 = page.items ?? [];
+        if (!items2.length) break;
+        for (const it of items2) {
+          scannedGlobal++;
+          const h = it.request?.getHost?.();
+          if (h && h.toLowerCase() === host.toLowerCase()) {
+            matched.push(it);
+            if (matched.length >= limit) break;
+          }
+        }
+        const last = items2[items2.length - 1];
+        if (items2.length < pageSize || !last?.cursor) break;
+        after = last.cursor;
+      } catch (e) {
+        log(`paginated scan threw: ${e.message}`);
+        break;
+      }
+    }
+    log(`paginated host scan: examined ${scannedGlobal} global request(s), matched ${matched.length} for the host`);
+    return matched;
+  };
+  log(`scanning history for host="${host}" (up to ${limit} requests)`);
+  let items = await runHostFiltered();
   log(`host-filtered query returned ${items.length} item(s)`);
-  let matchHostInJs = false;
   if (items.length === 0) {
-    items = await runQuery(null);
-    matchHostInJs = true;
-    log(`unfiltered query returned ${items.length} item(s)`);
+    log(`host filter matched nothing \u2014 paginating history to collect up to ${limit} request(s) for the host\u2026`);
+    items = await runPaginatedHostMatch();
   }
   let scanned = 0;
   let jwtStrings = 0;
@@ -2180,10 +2207,8 @@ async function collectHistoryJWTs(sdk, host, limit, onLog) {
     const item = raw;
     if (!item.request) continue;
     try {
-      if (matchHostInJs && host) {
-        const itemHost = item.request.getHost?.();
-        if (itemHost && itemHost.toLowerCase() !== host.toLowerCase()) continue;
-      }
+      const itemHost = item.request.getHost?.();
+      if (host && itemHost && itemHost.toLowerCase() !== host.toLowerCase()) continue;
       scanned++;
       let text = "";
       try {

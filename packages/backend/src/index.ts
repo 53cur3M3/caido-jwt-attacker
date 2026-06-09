@@ -376,7 +376,7 @@ async function attackJwt(
         recoveryCandidates = await collectHistoryJWTs(
           sdk,
           request.getHost(),
-          100,
+          1000,
           (m) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `[scan] ${m}` })
         );
       } catch { /* non-fatal */ }
@@ -848,29 +848,66 @@ async function collectHistoryJWTs(
   const seenSig = new Set<string>();
   const log = (m: string) => { sdk.console.log(`[recovery] ${m}`); onLog?.(m); };
 
-  const runQuery = async (filter: string | null): Promise<unknown[]> => {
+  const pageSize = 500;
+
+  // Server-side host filter: up to `limit` most-recent requests for THIS host.
+  const runHostFiltered = async (): Promise<unknown[]> => {
     try {
-      let q = sdk.requests.query().descending("req", "id").first(limit);
-      if (filter) q = q.filter(filter);
-      const page = await q.execute();
-      const conn = page as unknown as { items?: unknown[] };
-      return conn.items ?? [];
+      const page = await sdk.requests
+        .query()
+        .filter(`req.host.eq:"${host}"`)
+        .descending("req", "id")
+        .first(limit)
+        .execute();
+      return (page as unknown as { items?: unknown[] }).items ?? [];
     } catch (e) {
-      log(`query(${filter ?? "no-filter"}) threw: ${(e as Error).message}`);
+      log(`host-filtered query threw: ${(e as Error).message}`);
       return [];
     }
   };
 
-  log(`scanning history for host="${host}" (limit ${limit})`);
-  // Prefer a host-filtered query; fall back to unfiltered + JS host match if the
-  // filter syntax/host formatting matches nothing.
-  let items = await runQuery(`req.host.eq:"${host}"`);
+  // Fallback (only if the HTTPQL filter returns nothing): page through history
+  // newest-first and keep only THIS host's requests, until we have `limit` of them
+  // or hit a global scan cap. Guarantees we still get up to `limit` host requests
+  // even if the host filter syntax isn't supported.
+  const runPaginatedHostMatch = async (): Promise<unknown[]> => {
+    const matched: unknown[] = [];
+    const SCAN_CAP = 10000;
+    let scannedGlobal = 0;
+    let after: unknown = null;
+    while (matched.length < limit && scannedGlobal < SCAN_CAP) {
+      try {
+        let q = sdk.requests.query().descending("req", "id").first(pageSize);
+        if (after) q = (q as unknown as { after(c: unknown): typeof q }).after(after);
+        const page = await q.execute();
+        const items = (page as unknown as { items?: Array<{ cursor?: unknown; request?: { getHost?(): string } }> }).items ?? [];
+        if (!items.length) break;
+        for (const it of items) {
+          scannedGlobal++;
+          const h = it.request?.getHost?.();
+          if (h && h.toLowerCase() === host.toLowerCase()) {
+            matched.push(it);
+            if (matched.length >= limit) break;
+          }
+        }
+        const last = items[items.length - 1];
+        if (items.length < pageSize || !last?.cursor) break;
+        after = last.cursor;
+      } catch (e) {
+        log(`paginated scan threw: ${(e as Error).message}`);
+        break;
+      }
+    }
+    log(`paginated host scan: examined ${scannedGlobal} global request(s), matched ${matched.length} for the host`);
+    return matched;
+  };
+
+  log(`scanning history for host="${host}" (up to ${limit} requests)`);
+  let items = await runHostFiltered();
   log(`host-filtered query returned ${items.length} item(s)`);
-  let matchHostInJs = false;
   if (items.length === 0) {
-    items = await runQuery(null);
-    matchHostInJs = true;
-    log(`unfiltered query returned ${items.length} item(s)`);
+    log(`host filter matched nothing — paginating history to collect up to ${limit} request(s) for the host…`);
+    items = await runPaginatedHostMatch();
   }
 
   let scanned = 0;
@@ -882,10 +919,9 @@ async function collectHistoryJWTs(
     };
     if (!item.request) continue;
     try {
-      if (matchHostInJs && host) {
-        const itemHost = item.request.getHost?.();
-        if (itemHost && itemHost.toLowerCase() !== host.toLowerCase()) continue;
-      }
+      // Always confirm the request belongs to the target host.
+      const itemHost = item.request.getHost?.();
+      if (host && itemHost && itemHost.toLowerCase() !== host.toLowerCase()) continue;
       scanned++;
 
       // Scan the RAW request AND response text — JWTs may sit in any header,
