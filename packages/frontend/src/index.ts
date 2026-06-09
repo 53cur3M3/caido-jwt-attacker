@@ -88,10 +88,22 @@ export function init(sdk: CaidoSDK) {
       if (keys.length) {
         log("Recovered public key — launching algorithm-confusion attacks with it.");
         for (const key of keys) attackStore.addRecoveredKey(sessionId, `${key.bits}-bit modulus (e=${key.e})`);
+        // Pass baseline + signature-validation context so the backend can raise a
+        // finding when a forged (recovered-key) token is accepted.
+        const sess = attackStore.sessions.find((x) => x.sessionId === sessionId);
+        const baseline = sess?.results.find((r) => r.technique === "baseline");
+        const invalidSig = sess?.results.find((r) => r.technique === "invalidSig");
         const res = await sdk.backend.runRecoveredConfusion(
           requestId,
           keys.map((k) => ({ nHex: k.nHex, e: k.e })),
-          sessionId
+          sessionId,
+          {
+            baselineStatus: baseline?.responseStatus,
+            baselineLength: baseline?.responseLength,
+            // Server enforces signatures if the invalid-sig probe differed from baseline.
+            sigValidated: !!invalidSig && invalidSig.responseStatus !== undefined && !invalidSig.signatureNotValidated,
+            candidateJwts: candidates.map((c) => `${c.headerB64}.${c.payloadB64}.${c.signatureB64}`),
+          }
         );
         // Store recovered key PEM(s) for the detail pane / jwt_tool repro.
         const pems = res?.pems ?? [];

