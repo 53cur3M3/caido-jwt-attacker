@@ -67,13 +67,31 @@
           />
         </div>
         <div>
-          <label class="block mb-1 text-gray-300">Certificate (PEM) — for algorithm confusion</label>
+          <label class="block mb-1 text-gray-300">Certificate (PEM) — for algorithm confusion / TLS-key reuse check</label>
           <textarea
             v-model="cfg.customCertPem"
             rows="4"
             placeholder="-----BEGIN CERTIFICATE-----&#10;..."
             class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-gray-200 text-xs font-mono focus:outline-none focus:border-blue-500 resize-none"
           />
+          <p class="text-xs text-gray-500 mt-1">
+            Paste the web server's TLS certificate here to use it as a key source (algorithm confusion) and to
+            detect TLS-key reuse. Get it with no extra tools:
+          </p>
+          <div class="mt-1 space-y-1">
+            <div class="flex items-start gap-2">
+              <span class="text-xs text-gray-400 shrink-0 w-16">Windows</span>
+              <pre class="flex-1 bg-gray-900 rounded p-1.5 text-xs text-cyan-300 whitespace-pre-wrap break-all select-all">{{ psCmd }}</pre>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-xs text-gray-400 shrink-0 w-16">Linux/Mac</span>
+              <pre class="flex-1 bg-gray-900 rounded p-1.5 text-xs text-cyan-300 whitespace-pre-wrap break-all select-all">{{ opensslCmd }}</pre>
+            </div>
+            <p class="text-xs text-gray-500">
+              Or in any browser: click the padlock → certificate → export/details, and paste the PEM. Replace
+              <code>HOST</code> with the target hostname.
+            </p>
+          </div>
         </div>
       </div>
     </section>
@@ -165,6 +183,20 @@
           :class="['text-xs mt-2 font-mono break-words', gmpOk ? 'text-green-400' : 'text-red-400']"
         >{{ gmpOk ? "✓ " : "✗ " }}{{ gmpResult }}</p>
       </div>
+
+      <!-- sdk.net raw-socket diagnostic (TLS cert fetch) -->
+      <div class="mt-4">
+        <button
+          @click="runNetTest"
+          :disabled="netTesting"
+          class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-100 text-xs rounded transition-colors disabled:opacity-50"
+          title="Fetch example.com's TLS certificate (confirms the in-plugin TLS cert retrieval works in this runtime)"
+        >{{ netTesting ? "Testing…" : "Test TLS certificate fetch (example.com)" }}</button>
+        <pre
+          v-if="netResult"
+          class="text-xs mt-2 font-mono whitespace-pre-wrap break-all text-gray-300 bg-gray-900 rounded p-2 select-all"
+        >{{ netResult }}</pre>
+      </div>
     </section>
 
     <div class="pt-2 flex gap-3">
@@ -198,6 +230,28 @@ const copiedJwks = ref(false);
 const gmpTesting = ref(false);
 const gmpResult = ref("");
 const gmpOk = ref(false);
+const netTesting = ref(false);
+const netResult = ref("");
+
+// Cross-platform ways to obtain the web server's TLS certificate (no openssl
+// needed on Windows). Output pastes straight into the Certificate field above.
+const psCmd =
+  "$h='HOST';$t=[Net.Sockets.TcpClient]::new($h,443);$s=[Net.Security.SslStream]::new($t.GetStream(),$false,{$true});" +
+  "$s.AuthenticateAsClient($h);'-----BEGIN CERTIFICATE-----'+[Convert]::ToBase64String($s.RemoteCertificate.Export('Cert'))+'-----END CERTIFICATE-----';$s.Close();$t.Close()";
+const opensslCmd = "openssl s_client -connect HOST:443 -servername HOST </dev/null 2>/dev/null | openssl x509";
+
+async function runNetTest() {
+  netTesting.value = true;
+  netResult.value = "";
+  try {
+    const r = await store.netSelfTest();
+    netResult.value = r?.message ?? "No response.";
+  } catch (e) {
+    netResult.value = `Self-test threw: ${(e as Error).message}`;
+  } finally {
+    netTesting.value = false;
+  }
+}
 
 async function runGmpTest() {
   gmpTesting.value = true;

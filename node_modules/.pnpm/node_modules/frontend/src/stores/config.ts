@@ -7,6 +7,7 @@ interface ConfigSDK {
   storage: { get: (k: string) => Promise<unknown>; set: (k: string, v: unknown) => Promise<void> };
   backend: {
     generateSpoofKeyPair: () => Promise<{ privateKeyPem: string; jwksJson: string }>;
+    netSelfTest: () => Promise<{ message: string }>;
   };
 }
 
@@ -60,5 +61,10 @@ export const useConfigStore = defineStore("config", () => {
     await regenerateSpoofKeyPair();
   }
 
-  return { config, regenerating, setSDK, load, save, update, regenerateSpoofKeyPair, ensureSpoofKeyPair };
+  async function netSelfTest() {
+    if (!sdk) return { message: "SDK not ready." };
+    return sdk.backend.netSelfTest();
+  }
+
+  return { config, regenerating, setSDK, load, save, update, regenerateSpoofKeyPair, ensureSpoofKeyPair, netSelfTest };
 });

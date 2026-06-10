@@ -13,7 +13,12 @@
       <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Recovered public key(s)</p>
       <div v-if="keys.length">
         <div v-for="(k, i) in keys" :key="i" class="mb-3">
-          <div class="text-xs text-green-300 mb-1">✓ {{ k.bits }}-bit modulus (e={{ k.e }})</div>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-green-300">✓ {{ k.bits }}-bit modulus (e={{ k.e }})</span>
+            <button @click="copy(k.pem, 'key' + i)" class="text-xs text-gray-400 hover:text-blue-400 transition-colors">
+              {{ copiedId === 'key' + i ? "✓ Copied" : "Copy" }}
+            </button>
+          </div>
           <pre class="bg-gray-900 rounded p-2 text-xs text-green-200 overflow-x-auto whitespace-pre-wrap break-all select-all">{{ k.pem }}</pre>
         </div>
       </div>
@@ -30,7 +35,12 @@
       </p>
       <div v-if="candidates.length" class="space-y-2">
         <div v-for="(jwt, i) in candidates" :key="i">
-          <div class="text-xs text-gray-400 mb-0.5">JWT {{ i + 1 }}</div>
+          <div class="flex items-center justify-between mb-0.5">
+            <span class="text-xs text-gray-400">JWT {{ i + 1 }}</span>
+            <button @click="copy(jwt, 'jwt' + i)" class="text-xs text-gray-400 hover:text-blue-400 transition-colors">
+              {{ copiedId === 'jwt' + i ? "✓ Copied" : "Copy" }}
+            </button>
+          </div>
           <pre class="bg-gray-900 rounded p-2 text-xs text-cyan-300 overflow-x-auto whitespace-pre-wrap break-all select-all">{{ jwt }}</pre>
         </div>
       </div>
@@ -39,16 +49,21 @@
 
     <!-- Recovery log -->
     <section class="px-4 py-3 border-b border-gray-700">
-      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Recovery log</p>
-      <pre class="bg-gray-900 rounded p-2 text-xs text-yellow-200 overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto">{{ log.join("\n") }}</pre>
+      <div class="flex items-center justify-between mb-1">
+        <p class="text-xs text-gray-500 uppercase tracking-wide">Recovery log</p>
+        <button @click="copy(log.join('\n'), 'log')" class="text-xs text-gray-400 hover:text-blue-400 transition-colors">
+          {{ copiedId === 'log' ? "✓ Copied" : "Copy" }}
+        </button>
+      </div>
+      <pre class="bg-gray-900 rounded p-2 text-xs text-yellow-200 overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto select-all">{{ log.join("\n") }}</pre>
     </section>
 
     <!-- Reproduce with jwt_tool -->
     <section class="px-4 py-3">
       <div class="flex items-center justify-between mb-1">
         <p class="text-xs text-gray-500 uppercase tracking-wide">Reproduce with jwt_tool</p>
-        <button @click="copyRepro" class="text-xs text-gray-400 hover:text-blue-400 transition-colors">
-          {{ copied ? "✓ Copied" : "Copy" }}
+        <button @click="copy(repro, 'repro')" class="text-xs text-gray-400 hover:text-blue-400 transition-colors">
+          {{ copiedId === 'repro' ? "✓ Copied" : "Copy" }}
         </button>
       </div>
       <pre class="bg-gray-900 rounded p-2 text-xs text-cyan-300 overflow-x-auto max-h-72 overflow-y-auto whitespace-pre-wrap break-all select-all">{{ repro }}</pre>
@@ -94,10 +109,12 @@ const repro = computed(() => {
   ].join("\n");
 });
 
-const copied = ref(false);
-async function copyRepro() {
-  await navigator.clipboard.writeText(repro.value);
-  copied.value = true;
-  setTimeout(() => { copied.value = false; }, 1500);
+// Copy any text to the clipboard (Caido's UI blocks manual text selection, so
+// every block has its own Copy button). `copiedId` tracks which button to flash.
+const copiedId = ref<string | null>(null);
+async function copy(text: string, id: string) {
+  try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+  copiedId.value = id;
+  setTimeout(() => { if (copiedId.value === id) copiedId.value = null; }, 1500);
 }
 </script>

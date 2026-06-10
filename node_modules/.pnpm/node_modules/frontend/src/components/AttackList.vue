@@ -156,6 +156,7 @@ const bannerLog = computed(() => {
     .filter((m) =>
       !m.startsWith("e=") &&
       !m.startsWith("[scan]") &&
+      !m.startsWith("[TLS]") &&
       !m.startsWith("candidate ") &&
       !m.startsWith("Recovering ") &&
       !m.startsWith("Skipping pair")

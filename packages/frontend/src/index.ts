@@ -74,7 +74,7 @@ export function init(sdk: CaidoSDK) {
   // Backend has no WebAssembly, so RSA key recovery runs HERE (gmp-wasm in a Web
   // Worker). On success, hand the modulus back to the backend to launch the
   // algorithm-confusion attack with it.
-  sdk.backend.onEvent("jwt-recovery-candidates", async ({ sessionId, requestId, originalJWT, candidates }) => {
+  sdk.backend.onEvent("jwt-recovery-candidates", async ({ sessionId, requestId, originalJWT, tlsModulusHex, candidates }) => {
     const log = (m: string) => attackStore.logKeyRecovery(sessionId, m);
     // Store the full candidate tokens so the recovery detail pane can show them.
     attackStore.setRecoveryCandidates(
@@ -103,6 +103,7 @@ export function init(sdk: CaidoSDK) {
             // Server enforces signatures if the invalid-sig probe differed from baseline.
             sigValidated: !!invalidSig && invalidSig.responseStatus !== undefined && !invalidSig.signatureNotValidated,
             candidateJwts: candidates.map((c) => `${c.headerB64}.${c.payloadB64}.${c.signatureB64}`),
+            tlsModulusHex,
           }
         );
         // Store recovered key PEM(s) for the detail pane / jwt_tool repro.
