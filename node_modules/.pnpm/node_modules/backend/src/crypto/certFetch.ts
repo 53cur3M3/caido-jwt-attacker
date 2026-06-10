@@ -191,3 +191,73 @@ export async function discoverJWKS(
 
   return results;
 }
+
+// ─── OpenID Connect discovery from the token's `iss` claim ───────────────────
+
+export interface OIDCDiscovery {
+  issuer: string;                    // the iss claim this was derived from
+  configUrl: string;                 // the openid-configuration URL that responded
+  configContent: string;            // raw openid-configuration body
+  jwksUri: string | null;            // jwks_uri advertised by the document
+  signingAlgs: string[];             // id_token_signing_alg_values_supported
+  jwks: JWKSDiscoveryResult | null;  // keys fetched from jwks_uri
+}
+
+// Candidate openid-configuration URLs for an issuer. Primary form is OpenID
+// Connect Discovery 1.0 (append to the issuer, e.g. Keycloak
+// https://host/realms/x/.well-known/openid-configuration). For issuers with a
+// path we also try the RFC 8414 form (insert the well-known segment between host
+// and path), which some OAuth servers use.
+function oidcConfigCandidates(issuer: string): string[] {
+  const trimmed = issuer.replace(/\/+$/, "");
+  const out = [`${trimmed}/.well-known/openid-configuration`];
+  try {
+    const u = new URL(trimmed);
+    if (u.pathname && u.pathname !== "/") {
+      out.push(`${u.protocol}//${u.host}/.well-known/openid-configuration${u.pathname}`);
+      out.push(`${u.protocol}//${u.host}/.well-known/oauth-authorization-server${u.pathname}`);
+    }
+  } catch { /* issuer is not an absolute URL — caller guards this */ }
+  return out;
+}
+
+// Resolve the token's `iss` claim via OpenID Connect discovery:
+//   {iss}/.well-known/openid-configuration → jwks_uri → JWKS
+// Also returns id_token_signing_alg_values_supported so the caller can decide
+// which algorithm-confusion targets are relevant. Returns null if iss is not an
+// absolute http(s) URL or no discovery document is reachable.
+export async function discoverFromIssuer(
+  fetcher: UrlFetcher,
+  issuer: string
+): Promise<OIDCDiscovery | null> {
+  try {
+    const u = new URL(issuer);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  } catch {
+    return null; // iss is not a URL (e.g. an opaque string) — nothing to resolve
+  }
+
+  for (const configUrl of oidcConfigCandidates(issuer)) {
+    let configContent: string;
+    try {
+      configContent = await fetcher(configUrl);
+    } catch {
+      continue;
+    }
+    let doc: { jwks_uri?: unknown; id_token_signing_alg_values_supported?: unknown };
+    try {
+      doc = JSON.parse(configContent) as typeof doc;
+    } catch {
+      continue;
+    }
+    const jwksUri = typeof doc.jwks_uri === "string" ? doc.jwks_uri : null;
+    const signingAlgs = Array.isArray(doc.id_token_signing_alg_values_supported)
+      ? doc.id_token_signing_alg_values_supported.filter((a): a is string => typeof a === "string")
+      : [];
+    // Only accept a body that actually looks like OIDC/OAuth metadata.
+    if (!jwksUri && signingAlgs.length === 0) continue;
+    const jwks = jwksUri ? await tryJwks(fetcher, jwksUri) : null;
+    return { issuer, configUrl, configContent, jwksUri, signingAlgs, jwks };
+  }
+  return null;
+}

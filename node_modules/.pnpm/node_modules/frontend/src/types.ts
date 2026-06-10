@@ -67,6 +67,19 @@ export interface RecoveryInfo {
   keys: Array<{ pem: string; bits: number; e: number }>; // recovered public key(s)
 }
 
+// Summary of the token's `iss` claim + OpenID Connect discovery (for the
+// "Key discovery / recovery" panel). Set from the backend "jwt-iss-discovery" event.
+export interface IssDiscoveryInfo {
+  issPresent: boolean;
+  iss: string | null;
+  configRetrieved: boolean;   // openid-configuration was fetched from the iss URL
+  configUrl: string | null;
+  jwksUri: string | null;
+  keyExtracted: boolean;      // ≥1 key extracted from the issuer's JWKS
+  keyCount: number;
+  signingAlgs: string[];      // id_token_signing_alg_values_supported
+}
+
 export interface AttackSession {
   sessionId: string;
   requestId: string;
@@ -79,6 +92,7 @@ export interface AttackSession {
   discoveredEndpoints: DiscoveredEndpoint[];
   spoof?: SpoofInfo;
   recovery?: RecoveryInfo;
+  issDiscovery?: IssDiscoveryInfo;
   keyRecoveryLog: string[];
 }
 

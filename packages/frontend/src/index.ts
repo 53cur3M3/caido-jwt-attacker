@@ -71,6 +71,10 @@ export function init(sdk: CaidoSDK) {
     attackStore.addDiscoveredEndpoint(sessionId, { url, source, keyCount, content, pems });
   });
 
+  sdk.backend.onEvent("jwt-iss-discovery", ({ sessionId, ...info }) => {
+    attackStore.setIssDiscovery(sessionId, info);
+  });
+
   // Backend has no WebAssembly, so RSA key recovery runs HERE (gmp-wasm in a Web
   // Worker). On success, hand the modulus back to the backend to launch the
   // algorithm-confusion attack with it.

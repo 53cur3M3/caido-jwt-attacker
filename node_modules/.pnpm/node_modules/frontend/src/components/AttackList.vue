@@ -59,7 +59,7 @@
 
     <!-- Key recovery / discovery log (click → right pane) -->
     <div
-      v-if="session?.keyRecoveryLog.length"
+      v-if="session && (session.keyRecoveryLog.length || session.issDiscovery)"
       @click="emit('selectRecovery')"
       :class="['px-3 py-1.5 border-b text-xs max-h-40 overflow-y-auto cursor-pointer transition-colors',
         session.recovery?.keys.length ? 'bg-green-950 border-green-800 text-green-300' : 'bg-yellow-950 border-yellow-800 text-yellow-300',
@@ -70,6 +70,19 @@
         <span v-if="session.recovery?.keys.length">— ✓ {{ session.recovery.keys.length }} key(s) recovered</span>
         · click for details &amp; jwt_tool repro
       </p>
+      <!-- iss claim + OpenID Connect discovery summary -->
+      <template v-if="session.issDiscovery">
+        <p class="break-all leading-snug">
+          iss claim:
+          <span v-if="session.issDiscovery.issPresent" class="font-mono">present — {{ session.issDiscovery.iss }}</span>
+          <span v-else>not present in token</span>
+        </p>
+        <p v-if="session.issDiscovery.issPresent" class="break-all leading-snug">
+          Key recovered from iss URL:
+          <span v-if="session.issDiscovery.keyExtracted" class="text-green-300 font-semibold">✓ yes — {{ session.issDiscovery.keyCount }} key(s)</span>
+          <span v-else class="text-orange-300 font-semibold">✗ no</span>
+        </p>
+      </template>
       <p v-for="(msg, i) in bannerLog" :key="i" class="break-all leading-snug">{{ msg }}</p>
     </div>
 

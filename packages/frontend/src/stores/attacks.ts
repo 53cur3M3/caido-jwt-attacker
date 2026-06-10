@@ -81,6 +81,11 @@ export const useAttackStore = defineStore("attacks", () => {
     if (s) s.spoof = spoof;
   }
 
+  function setIssDiscovery(sessionId: string, info: AttackSession["issDiscovery"]) {
+    const s = sessions.value.find((x) => x.sessionId === sessionId);
+    if (s) s.issDiscovery = info;
+  }
+
   function setRecoveryCandidates(sessionId: string, candidates: string[], originalJWT: string) {
     const s = sessions.value.find((x) => x.sessionId === sessionId);
     if (s) s.recovery = { candidates, originalJWT, keys: s.recovery?.keys ?? [] };
@@ -113,6 +118,7 @@ export const useAttackStore = defineStore("attacks", () => {
     logKeyRecovery,
     addDiscoveredEndpoint,
     setSpoof,
+    setIssDiscovery,
     setRecoveryCandidates,
     setRecoveredKeys,
     setActiveSession,

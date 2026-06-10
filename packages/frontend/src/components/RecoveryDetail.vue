@@ -8,6 +8,38 @@
       </p>
     </div>
 
+    <!-- OpenID Connect issuer (iss) discovery -->
+    <section v-if="iss" class="px-4 py-3 border-b border-gray-700">
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">OpenID Connect issuer (iss)</p>
+      <div class="space-y-1 text-xs">
+        <div class="flex gap-2">
+          <span class="text-gray-400 shrink-0 w-36">iss claim present</span>
+          <span v-if="iss.issPresent" class="text-green-300 font-mono break-all">✓ {{ iss.iss }}</span>
+          <span v-else class="text-gray-400">✗ not present in token</span>
+        </div>
+        <template v-if="iss.issPresent">
+          <div class="flex gap-2">
+            <span class="text-gray-400 shrink-0 w-36">iss URL retrieved</span>
+            <span v-if="iss.configRetrieved" class="text-green-300 break-all">✓ {{ iss.configUrl }}</span>
+            <span v-else class="text-orange-300">✗ openid-configuration not reachable</span>
+          </div>
+          <div v-if="iss.configRetrieved" class="flex gap-2">
+            <span class="text-gray-400 shrink-0 w-36">jwks_uri</span>
+            <span class="text-gray-300 font-mono break-all">{{ iss.jwksUri ?? "(none advertised)" }}</span>
+          </div>
+          <div class="flex gap-2">
+            <span class="text-gray-400 shrink-0 w-36">key extracted</span>
+            <span v-if="iss.keyExtracted" class="text-green-300">✓ {{ iss.keyCount }} key(s) from the issuer JWKS</span>
+            <span v-else class="text-orange-300">✗ no key extracted from the iss URL</span>
+          </div>
+          <div v-if="iss.signingAlgs.length" class="flex gap-2">
+            <span class="text-gray-400 shrink-0 w-36">supported algs</span>
+            <span class="text-gray-300 font-mono break-all">{{ iss.signingAlgs.join(", ") }}</span>
+          </div>
+        </template>
+      </div>
+    </section>
+
     <!-- Recovered key(s) -->
     <section class="px-4 py-3 border-b border-gray-700">
       <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Recovered public key(s)</p>
@@ -82,6 +114,7 @@ import type { AttackSession } from "../types.js";
 const props = defineProps<{ session: AttackSession | null }>();
 
 const log = computed(() => props.session?.keyRecoveryLog ?? []);
+const iss = computed(() => props.session?.issDiscovery ?? null);
 const candidates = computed(() => props.session?.recovery?.candidates ?? []);
 const keys = computed(() => props.session?.recovery?.keys ?? []);
 const originalJWT = computed(() => props.session?.recovery?.originalJWT ?? "<original-JWT>");

