@@ -208,6 +208,11 @@ const jwtTool = computed<{ cmd: string; note?: string } | null>(() => {
         cmd: `${J} ${orig} -X n`,
         note: "Produces the null-signature token (CVE-2020-28042).",
       };
+    case "psychicSig":
+      return {
+        cmd: `${J} ${orig} -X p`,
+        note: 'CVE-2022-21449. jwt_tool\'s -X p forces alg=ES256 with the DER zero signature "MAYCAQACAQA". The raw r‖s row is an equivalent variant (sized to the original curve) that jwt_tool does not emit.',
+      };
     case "embeddedJwk":
       return {
         cmd: `${J} ${orig} -X i`,

@@ -139,6 +139,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
   enabledAttacks: {
     none: true,
     nullSig: true,
+    psychicSig: true,
     algConfusion: true,
     embeddedJwk: true,
     // Off by default: these require the user to configure & host a JWKS URL first.
@@ -153,6 +154,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
 export const ATTACK_LABELS: Record<string, string> = {
   none: "None Algorithm",
   nullSig: "Null Signature",
+  psychicSig: "Psychic Signature",
   algConfusion: "Algorithm Confusion",
   embeddedJwk: "Embedded JWK",
   jkuSpoof: "JKU Spoofing",
@@ -176,6 +178,7 @@ export function techniqueColor(technique: string): string {
     invalidSig: "bg-gray-500 text-gray-100",
     none: "bg-red-900 text-red-200",
     nullSig: "bg-red-900 text-red-200",
+    psychicSig: "bg-red-900 text-red-200",
     algConfusion: "bg-orange-900 text-orange-200",
     embeddedJwk: "bg-yellow-900 text-yellow-200",
     jkuSpoof: "bg-purple-900 text-purple-200",

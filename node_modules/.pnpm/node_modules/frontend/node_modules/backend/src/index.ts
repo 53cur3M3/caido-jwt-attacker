@@ -19,6 +19,7 @@ import { buildJKUSpoofAttacks, SPOOF_KID } from "./attacks/jkuSpoof.js";
 import { buildKIDInjectionAttacks } from "./attacks/kidInject.js";
 import { buildClaimTamperAttacks } from "./attacks/claimTamper.js";
 import { buildWeakSecretAttacks } from "./attacks/weakSecret.js";
+import { buildPsychicSigAttacks } from "./attacks/psychicSig.js";
 import { parseCookies, looksLikeJWT, nanoid } from "./util.js";
 import { COMMON_JWKS_PATHS } from "./types.js";
 import type {
@@ -164,6 +165,7 @@ async function attackJwt(
     if (cfg.enabledAttacks.embeddedJwk) await tryMerge("embeddedJwk", () => buildEmbeddedJWKAttacks(parsed, rsaKeyPair));
     if (cfg.enabledAttacks.kidInject) await tryMerge("kidInject", () => buildKIDInjectionAttacks(parsed));
     if (cfg.enabledAttacks.claimTamper) await tryMerge("claimTamper", () => buildClaimTamperAttacks(parsed));
+    if (cfg.enabledAttacks.psychicSig) await tryMerge("psychicSig", () => buildPsychicSigAttacks(parsed));
 
     if (cfg.enabledAttacks.weakSecret) {
       await tryMerge("weakSecret", () => buildWeakSecretAttacks(parsed, cfg, originalJWT));
@@ -869,6 +871,7 @@ const BYPASS_TITLES: Record<string, string> = {
   kidInject: "JWT 'kid' header injection accepted",
   claimTamper: "JWT claim tampering accepted (signature not enforced)",
   weakSecret: "JWT signed with weak/guessable secret accepted",
+  psychicSig: "JWT psychic signature (CVE-2022-21449) accepted",
 };
 
 // base64-encode the key PEM the way the matching algorithm-confusion secret was
@@ -900,6 +903,7 @@ function buildReproCommand(r: AttackResult): string | undefined {
     }
     case "none": return `${J} ${orig} -X a`;
     case "nullSig": return `${J} ${orig} -X n`;
+    case "psychicSig": return `${J} ${orig} -X p`;
     case "embeddedJwk": return `${J} ${orig} -X i`;
     case "jkuSpoof":
     case "x5uSpoof": {
@@ -938,7 +942,7 @@ function buildReproCommand(r: AttackResult): string | undefined {
 }
 
 const ALL_ATTACKS = [
-  "none", "nullSig", "algConfusion", "embeddedJwk", "jkuSpoof",
+  "none", "nullSig", "psychicSig", "algConfusion", "embeddedJwk", "jkuSpoof",
   "x5uSpoof", "kidInject", "claimTamper", "weakSecret",
 ] as const;
 

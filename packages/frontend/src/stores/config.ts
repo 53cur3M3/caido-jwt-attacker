@@ -25,7 +25,15 @@ export const useConfigStore = defineStore("config", () => {
     try {
       const saved = await sdk.storage.get("config");
       if (saved && typeof saved === "object") {
-        config.value = { ...DEFAULT_CONFIG, ...(saved as PluginConfig) };
+        const savedCfg = saved as PluginConfig;
+        config.value = {
+          ...DEFAULT_CONFIG,
+          ...savedCfg,
+          // Deep-merge enabledAttacks so attacks added AFTER this config was saved
+          // inherit their default (e.g. psychicSig defaults on) instead of being
+          // absent — a shallow spread would let the saved object drop new keys.
+          enabledAttacks: { ...DEFAULT_CONFIG.enabledAttacks, ...(savedCfg.enabledAttacks ?? {}) },
+        };
       }
     } catch { /* ignore */ }
   }

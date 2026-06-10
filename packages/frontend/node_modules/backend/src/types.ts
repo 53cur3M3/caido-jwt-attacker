@@ -147,6 +147,7 @@ export const DEFAULT_CONFIG: PluginConfig = {
   enabledAttacks: {
     none: true,
     nullSig: true,
+    psychicSig: true,
     algConfusion: true,
     embeddedJwk: true,
     // Off by default: these require the user to configure & host a JWKS URL first.
