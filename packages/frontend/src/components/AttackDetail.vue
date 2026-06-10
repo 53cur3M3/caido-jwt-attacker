@@ -53,6 +53,20 @@
         </div>
       </section>
 
+      <!-- kid OS command-injection timing outcome -->
+      <section v-if="result.commandInjectionDetected" class="px-4 py-3 border-b border-gray-700">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Command injection (timing)</p>
+        <div class="bg-red-950 border border-red-800 rounded p-2 text-xs text-red-200">
+          ⚠ The response was delayed <strong>{{ result.durationMs }}ms</strong> vs the baseline
+          <strong>{{ result.baselineDurationMs }}ms</strong>
+          (+{{ (result.durationMs ?? 0) - (result.baselineDurationMs ?? 0) }}ms ≈ the injected
+          {{ result.expectedDelayMs }}ms). The server appears to execute the <code>kid</code> value in an OS shell —
+          <strong>command injection (RCE)</strong>. Injected
+          <span class="font-mono">{{ result.injectedCommand }}</span> (space: {{ result.spaceEncoding }}).
+          A finding "Command Injection using JWT <code>kid</code>" has been created.
+        </div>
+      </section>
+
       <!-- Modified JWT (hidden for info-only rows such as JWKS verification) -->
       <section v-if="result.modifiedJWT" class="px-4 py-3 border-b border-gray-700">
         <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Modified JWT</p>
@@ -242,6 +256,16 @@ const jwtTool = computed<{ cmd: string; note?: string } | null>(() => {
     case "kidInject": {
       const kid = typeof modHeader.kid === "string" ? modHeader.kid : "";
       const secret = r.hmacSecret ?? "";
+      if (r.expectedDelayMs !== undefined) {
+        const secs = r.expectedDelayMs / 1000;
+        return {
+          cmd: `${J} ${orig} -I -hc kid -hv '${kid}' -S hs256 -p '${secret}'`,
+          note:
+            `OS command injection via kid (injected: ${r.injectedCommand}; space encoding: ${r.spaceEncoding}). ` +
+            `Injects the malicious kid and signs HS256 with an empty secret. If the server shells out the kid ` +
+            `during key lookup, the response is delayed ~${secs}s vs the baseline — confirming command injection.`,
+        };
+      }
       return {
         cmd: `${J} ${orig} -I -hc kid -hv '${kid}' -S hs256 -p '${secret}'`,
         note: `Sets kid="${kid}" and signs HS256 with the secret this injection implies ("${secret}").`,

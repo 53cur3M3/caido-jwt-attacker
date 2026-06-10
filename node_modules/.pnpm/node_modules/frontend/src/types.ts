@@ -32,6 +32,15 @@ export interface AttackResult {
   signatureNotValidated?: boolean;
   // Weak-secret crack: how many unique secrets were tested.
   secretsTested?: number;
+  // kid OS command-injection timing probe (technique "kidInject"): the injected
+  // shell command, the space-encoding technique, and the delay it should cause.
+  injectedCommand?: string;
+  spaceEncoding?: string;
+  expectedDelayMs?: number;
+  // Set when the response was delayed ~expectedDelayMs vs the baseline (injection
+  // confirmed); baselineDurationMs records the baseline time it was compared to.
+  commandInjectionDetected?: boolean;
+  baselineDurationMs?: number;
 }
 
 export interface DiscoveredEndpoint {
